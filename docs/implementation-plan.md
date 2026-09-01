@@ -3,8 +3,8 @@
 README.md と AGENTS.md をもとに、レビューしやすい単位で issue 化できる粒度に分割した実装計画です。
 
 ## Issue 1: 要件と責務境界の整理
-- [ ] README.md と AGENTS.md の内容を基準に、対象範囲・非対象範囲・完了条件を確定する
-- [ ] web / worker / shared / config / infra / docs の責務を明文化する
+- [x] README.md と AGENTS.md の内容を基準に、対象範囲・非対象範囲・完了条件を確定する
+- [x] web / worker / shared / config / infra / docs の責務を明文化する
 
 ## Issue 2: 共通型と設定の土台を作る
 - [ ] Graph、Job、Stage、Diagnostic の共有型を定義する
