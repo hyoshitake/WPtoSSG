@@ -10,6 +10,10 @@
     "dev:web": "npm --workspace apps/web run dev",
     "dev:worker": "npm --workspace apps/worker run dev",
     "build:web": "npm --workspace apps/web run build",
-    "build:worker": "npm --workspace apps/worker run build"
+    "build:worker": "npm --workspace apps/worker run build",
+    "typecheck": "tsc -b packages/shared packages/config"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
   }
 }
