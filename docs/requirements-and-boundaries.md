@@ -1,75 +1,74 @@
-# Requirements and Responsibility Boundaries
+# 要件と責務境界
 
-This document is the consolidated source of truth for Issue 1.
+この文書は Issue 1 の唯一の参照元です。
 
-## Target scope
+## 対象範囲
 
-- Public WordPress sites that do not require login
-- Sites under the same domain
-- Sites that can be handled within the current MVP limit of fewer than 100 pages
-- Graph-based crawling rather than URL-list-only processing
-- Static HTML rendering after Playwright execution
-- Internal asset collection and local rewriting
-- Diagnostics for staticization difficulty
-- Google Drive output with `current` and `archive` rotation
+- ログイン不要の公開 WordPress サイト
+- 同一ドメイン配下のサイト
+- 現行 MVP の上限である 100 ページ未満で扱えるサイト
+- URL 列挙のみではなく Graph ベースで巡回する処理
+- Playwright 実行後の静的 HTML 生成
+- 内部アセットの収集とローカル参照への書き換え
+- 静的化しづらさの診断
+- `current` / `archive` ローテーション付きの Google Drive 出力
 
-## Non-goals
+## 非対象
 
-- Bypassing login or access restrictions
-- Supporting sites outside the current domain boundary
-- Large-scale crawls beyond the MVP page limit
-- CMS migration or content editing for WordPress itself
-- Rewriting external links by default
-- Replacing the existing Google Drive storage model
-- Treating diagnostics as definitive judgments without evidence
+- ログインやアクセス制限の回避
+- 現在のドメイン境界を超えるサイトの対応
+- MVP のページ上限を超える大規模クロール
+- WordPress 自体の CMS 移行やコンテンツ編集
+- 外部リンクの既定書き換え
+- 既存の Google Drive 保存モデルの置き換え
+- 証拠のない断定的な診断
 
-## Definition of done
+## 完了条件
 
-- A single public WordPress site under 100 pages can be processed end to end
-- The output lands under `/sites/{siteKey}/current`
-- A second run rotates the previous `current` into `archive`
-- SSE can surface progress and completion states
-- Diagnostics return `risk_level`, `reasons`, and `evidence`
-- The final report records success and failure details
+- 100 ページ未満の単一の公開 WordPress サイトをエンドツーエンドで処理できる
+- 出力が `/sites/{siteKey}/current` 配下に配置される
+- 2 回目の実行で、前回の `current` が `archive` に退避される
+- SSE で進捗と完了状態を配信できる
+- 診断結果が `risk_level` / `reasons` / `evidence` を返す
+- 最終レポートに成功・失敗の詳細が記録される
 
-## Responsibility boundaries
+## 責務境界
 
 ### apps/web
 
-- Job creation and status display
-- SSE event delivery and reconnection handling
-- Result and diagnostic presentation
-- No Playwright, crawl, or Drive heavy lifting
+- ジョブ作成と状態表示
+- SSE イベント配信と再接続処理
+- 結果と診断の表示
+- Playwright、クロール、Drive の重い処理は行わない
 
 ### apps/worker
 
-- BullMQ job execution
-- Crawl, render, snapshot, asset handling, diagnostics, and Drive writes
-- Retry-friendly handling of page-level failures
-- No UI rendering or client-facing orchestration
+- BullMQ ジョブ実行
+- クロール、レンダリング、スナップショット、アセット処理、診断、Drive 書き込み
+- ページ単位の失敗に対して再試行しやすい扱い
+- UI 描画やクライアント向けのオーケストレーションは行わない
 
 ### packages/shared
 
-- Shared types and schemas for jobs, stages, graphs, and diagnostics
-- Request and response contracts used by both web and worker
-- No environment-specific logic or I/O
+- ジョブ、ステージ、Graph、診断の共有型とスキーマ
+- web と worker の両方で使うリクエスト/レスポンス契約
+- 環境依存ロジックや I/O は持たない
 
 ### packages/config
 
-- Domain rules
-- CDN mapping
-- Staticization rule settings
-- No runtime job execution
+- ドメイン判定ルール
+- CDN マッピング
+- 静的化ルール設定
+- 実行時のジョブ処理は持たない
 
 ### infra
 
-- Database, queue, and storage provisioning
-- Deployment and operational wiring
-- No product logic
+- データベース、キュー、ストレージのプロビジョニング
+- デプロイと運用の配線
+- プロダクトロジックは持たない
 
 ### docs
 
-- Architecture, operations, diagnostics, and boundary clarifications
-- Definition of done and implementation notes
-- No runtime code
-
+- アーキテクチャ、運用、診断、境界の明確化
+- 完了条件と実装メモ
+- 実行時コードは持たない
