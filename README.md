@@ -60,6 +60,109 @@ WPtoSSG は、公開中の WordPress サイトを対象に、以下を自動化�
 
 ---
 
+## モジュール分割案
+
+WPtoSSG は責務ごとに 4 層に分割し、重い処理を Worker に閉じ込める構成を採用する。
+
+### 1. apps/web
+
+- 役割
+  - Next.js 15 App Router ベースの UI
+  - ジョブ作成 API
+  - 状態確認 API
+  - SSE 測定用のイベント配信
+  - 変換結果の表示・診断結果の可視化
+- 目的
+  - ユーザーがサイト URL を入力し、ジョブを起動し、進捗と結果を確認できるようにする
+
+### 2. apps/worker
+
+- 役割
+  - BullMQ ジョブ実行
+  - クロール、Graph 生成、レンダリング、診断、Drive 連携
+  - 失敗したページを個別に記録し、全体の再試行を可能にする
+- 目的
+  - Playwright や HTTP/Google Drive API の重い処理を Vercel から分離し、再実行可能性と監視性を高める
+
+### 3. packages/shared
+
+- 役割
+  - `JobStatus`, `StageName`, `DiagnosticResult` などの共有型
+  - Graph ノード/エッジの型
+  - API リクエスト/レスポンス形式の定義
+- 目的
+  - web と worker の境界を明確にし、型の不整合を防ぐ
+
+### 4. packages/config
+
+- 役割
+  - CDN マッピング一覧
+  - ドメイン判定ルール
+  - 既知ライブラリの変換設定
+  - ルールベースの静的化設定
+- 目的
+  - 変換と診断の判断ロジックをコードから分離して再利用可能にする
+
+### 5. infra
+
+- 役割
+  - Supabase の SQL/DDL
+  - Railway のジョブ/Redis 構成
+  - Google Drive 配置ルールやサービスアカウント設定
+- 目的
+  - インフラとアプリロジックの責務分離を行い、再デプロイ可能な構成にする
+
+### 6. docs
+
+- 役割
+  - アーキテクチャ設計
+  - 運用ルール
+  - 診断指針
+  - 成果物の命名規約
+- 目的
+  - 実装と運用ルールを組織横断で共有する
+
+---
+
+## 技術選定表
+
+| 領域 | 選定技術 | 理由 | 補足 |
+| --- | --- | --- | --- |
+| フロントエンド | Next.js 15 (App Router) | App Router と API Routes を使って UI とジョブ制御を一体化しやすい | Vercel へのデプロイに適している |
+| UI | Tailwind + shadcn/ui | 高速開発、保守しやすいダッシュボード構成 | 進捗・診断結果の表示に適する |
+| バックエンド/ジョブ | Node.js + TypeScript | Worker での非同期処理と Playwright 連携に適している | 型安全性を確保しやすい |
+| 依頼キュー | BullMQ + Redis | ジョブ実行、ステージ管理、再試行に向いている | `convert-site` のステージ制御に自然 |
+| HTML取得/レンダリング | Playwright | JS 実行後の DOM を正確に取得できる | 無限スクロール・lazy load に対応可能 |
+| HTML解析 | Cheerio |  DOM のメタ解析、有効なリンク抽出、静的化前の軽量検査に向く | Playwright の重い処理と分離できる |
+| データベース | Supabase PostgreSQL | ジョブ管理・Graph保存・診断結果の永続化に適する | 低コストで運用しやすい |
+| ストレージ | Google Drive | current/archive 運用と静的ファイル配布の簡易性が高い | `/sites/{siteKey}` 配下に管理しやすい |
+| リアルタイム通知 | Server-Sent Events | SSE でステージ進捗・診断完了を簡潔に配信できる | `Last-Event-ID` で再接続に対応可能 |
+| デプロイ | Vercel + Railway | UI と重い処理を分離して運用しやすい | 組織運用に適した責務分離 |
+
+---
+
+## README との比較と更新ポイント
+
+既存 README はアーキテクチャの大枠と主要機能は記述されているが、以下の観点が不足していた。
+
+1. モジュール責務の明示
+   - `apps/web`, `apps/worker`, `packages/shared`, `packages/config`, `infra` の分担が整理されていなかった
+   - これを追加することで、Vercel と Worker の役割分離が明確になる
+
+2. 技術選定の根拠
+   - 「なぜ Next.js / Playwright / BullMQ / Supabase / Google Drive を選ぶのか」が説明不足だった
+   - それぞれの選定理由を表に整理した
+
+3. 実装境界の明文化
+   - 重い処理は Worker に限定し、フロントエンドは UI とイベント表示のみを担当する方針を明示した
+
+4. 運用上の責務分離
+   - `infra` と `docs` が書かれていなかったが、実運用で重要な層として追加した
+
+この更新により、README は設計指南書としての粒度を上げ、実装時のモジュール境界と選定根拠を揃えた。
+
+---
+
 ## 想定ディレクトリ構成
 
 ```txt
@@ -68,12 +171,17 @@ WPtoSSG は、公開中の WordPress サイトを対象に、以下を自動化�
 │  ├─ web/                  # Next.js (UI + API + SSE)
 │  └─ worker/               # BullMQ Worker (Playwright)
 ├─ packages/
-│  ├─ shared/               # 型定義・スキーマ
-│  └─ config/               # CDNマップ等
+│  ├─ shared/               # 型定義・Graph/Job/Diagnostic schema
+│  └─ config/               # CDNマップ・ドメイン判定・ルール設定
 ├─ infra/
 │  ├─ supabase/             # SQL/DDL
-│  └─ railway/              # デプロイ補助
-└─ docs/
+│  ├─ railway/              # デプロイ補助・ジョブ設定
+│  └─ gdrive/               # Drive 配置ポリシー
+├─ docs/
+│  ├─ architecture/         # アーキテクチャ設計
+│  ├─ operations/           # 運用手順
+│  └─ diagnostics/          # 診断ルール
+└─ README.md
 ```
 
 ---
