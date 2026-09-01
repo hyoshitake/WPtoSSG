@@ -18,6 +18,8 @@ WPtoSSG は、公開中の WordPress サイトを対象に、以下を自動化�
 
 > 想定対象: 公開ページのみ（ログイン不要サイト）、100ページ未満
 
+詳細な対象範囲・非対象範囲・責務境界は `docs/requirements-and-boundaries.md` を参照してください。
+
 ---
 
 ## システム構成
@@ -208,4 +210,3 @@ WPtoSSG は責務ごとに 4 層に分割し、重い処理を Worker に閉じ�
 - `GOOGLE_SERVICE_ACCOUNT_JSON`
 - `GOOGLE_DRIVE_ROOT_FOLDER_ID`
 - `NEXT_PUBLIC_APP_URL`
-
