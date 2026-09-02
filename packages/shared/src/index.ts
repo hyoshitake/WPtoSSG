@@ -256,3 +256,238 @@ export function serializeSseEvent(event: JobEventEnvelope): string {
 
   return `${lines.join('\n')}\n`;
 }
+
+export function normalizeGraphUrl(
+  url: string,
+  siteUrl?: string,
+  options: { normalizeQueryStrings?: boolean; preserveHash?: boolean } = {},
+): string {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  try {
+    const finalUrl = siteUrl ? new URL(trimmed, siteUrl) : new URL(trimmed);
+    const normalized = new URL(finalUrl.toString());
+
+    normalized.hash = options.preserveHash ? normalized.hash : '';
+
+    if (options.normalizeQueryStrings) {
+      normalized.search = '';
+    }
+
+    if (normalized.pathname === '') {
+      normalized.pathname = '/';
+    }
+
+    if (normalized.pathname.length > 1 && normalized.pathname.endsWith('/')) {
+      normalized.pathname = normalized.pathname.replace(/\/+$/, '');
+    }
+
+    return normalized.toString().replace(/\/$/, '') || `${normalized.origin}/`;
+  } catch {
+    return trimmed;
+  }
+}
+
+export function createGraphNodeId(url: string): string {
+  return encodeURIComponent(normalizeGraphUrl(url));
+}
+
+export function isGraphCandidateUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return ['http:', 'https:'].includes(parsed.protocol) && !!parsed.hostname;
+  } catch {
+    return false;
+  }
+}
+
+export function classifyGraphNodeKind(url: string, siteUrl: string): GraphNodeKind {
+  try {
+    const parsed = new URL(url, siteUrl);
+    const pathname = parsed.pathname.toLowerCase();
+
+    if (parsed.origin !== new URL(siteUrl).origin && !['http:', 'https:'].includes(parsed.protocol)) {
+      return 'external';
+    }
+
+    if (/\.(css|js|png|jpe?g|gif|svg|webp|avif|woff2?|ttf|eot|ico|pdf|zip|mp4|mp3)(?:[?#]|$)/i.test(pathname)) {
+      return 'asset';
+    }
+
+    if (/\/wp-json\b|\/api\b|graphql|api\./i.test(pathname + parsed.search)) {
+      return 'api';
+    }
+
+    if (parsed.searchParams.has('s') || /\bform\b|wp-login|login/i.test(pathname + parsed.search)) {
+      return 'form';
+    }
+
+    return 'page';
+  } catch {
+    return 'external';
+  }
+}
+
+export function isUrlWithinSiteScope(url: string, siteUrl: string): boolean {
+  try {
+    const base = new URL(siteUrl);
+    const target = new URL(url, siteUrl);
+
+    if (target.origin === base.origin) {
+      return true;
+    }
+
+    const baseHost = base.hostname.toLowerCase().replace(/^www\./, '');
+    const targetHost = target.hostname.toLowerCase().replace(/^www\./, '');
+
+    return targetHost === baseHost || targetHost.endsWith(`.${baseHost}`);
+  } catch {
+    return false;
+  }
+}
+
+export function createGraphNode(
+  url: string,
+  kind: GraphNodeKind = 'page',
+  metadata: Record<string, unknown> = {},
+  title?: string,
+): GraphNode {
+  const normalized = normalizeGraphUrl(url);
+  return {
+    id: createGraphNodeId(normalized),
+    url: normalized,
+    kind,
+    title,
+    status: 'pending',
+    metadata,
+  };
+}
+
+export function createGraphEdge(
+  from: string,
+  to: string,
+  type: EdgeType = 'links_to',
+  metadata: Record<string, unknown> = {},
+): GraphEdge {
+  const fromId = createGraphNodeId(from);
+  const toId = createGraphNodeId(to);
+
+  return {
+    id: `${fromId}:${type}:${toId}`,
+    from: fromId,
+    to: toId,
+    type,
+    metadata,
+  };
+}
+
+export function createEmptySiteGraph(siteUrl: string): SiteGraph {
+  const timestamp = new Date().toISOString();
+  return {
+    id: createGraphNodeId(siteUrl || 'site'),
+    siteUrl: normalizeGraphUrl(siteUrl),
+    nodes: [],
+    edges: [],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+export function addGraphNode(graph: SiteGraph, node: GraphNode): GraphNode {
+  if (graph.nodes.some((existing) => existing.id === node.id)) {
+    const current = graph.nodes.find((existing) => existing.id === node.id);
+    if (current) {
+      Object.assign(current, node);
+      graph.updatedAt = new Date().toISOString();
+      return current;
+    }
+  }
+
+  graph.nodes.push(node);
+  graph.updatedAt = new Date().toISOString();
+  return node;
+}
+
+export function addGraphEdge(graph: SiteGraph, fromUrl: string, toUrl: string, type: EdgeType = 'links_to', metadata: Record<string, unknown> = {}): GraphEdge | undefined {
+  if (!fromUrl || !toUrl) {
+    return undefined;
+  }
+
+  const fromNode = addGraphNode(
+    graph,
+    createGraphNode(fromUrl, classifyGraphNodeKind(fromUrl, graph.siteUrl), { source: 'crawl' }),
+  );
+  const toNode = addGraphNode(
+    graph,
+    createGraphNode(toUrl, classifyGraphNodeKind(toUrl, graph.siteUrl), { source: 'crawl' }),
+  );
+
+  const edge = createGraphEdge(fromNode.url, toNode.url, type, metadata);
+  const exists = graph.edges.some((existing) => existing.id === edge.id);
+  if (exists) {
+    return graph.edges.find((existing) => existing.id === edge.id);
+  }
+
+  graph.edges.push(edge);
+  graph.updatedAt = new Date().toISOString();
+  return edge;
+}
+
+export function buildSiteGraph(
+  siteUrl: string,
+  discoveredUrls: Iterable<string> = [],
+  options: {
+    normalizeQueryStrings?: boolean;
+    includeExternalLinks?: boolean;
+  } = {},
+): SiteGraph {
+  const graph = createEmptySiteGraph(siteUrl);
+  const rootNode = createGraphNode(siteUrl, 'page', { source: 'root' }, 'Home');
+  addGraphNode(graph, rootNode);
+
+  const normalizedOptions = {
+    normalizeQueryStrings: Boolean(options.normalizeQueryStrings),
+    includeExternalLinks: Boolean(options.includeExternalLinks),
+  };
+
+  const seen = new Set<string>();
+
+  for (const candidate of discoveredUrls) {
+    if (!candidate) {
+      continue;
+    }
+
+    const normalizedCandidate = normalizeGraphUrl(candidate, siteUrl, {
+      normalizeQueryStrings: normalizedOptions.normalizeQueryStrings,
+    });
+    if (!normalizedCandidate || seen.has(normalizedCandidate)) {
+      continue;
+    }
+
+    seen.add(normalizedCandidate);
+    const kind = isUrlWithinSiteScope(normalizedCandidate, siteUrl)
+      ? classifyGraphNodeKind(normalizedCandidate, siteUrl)
+      : 'external';
+    const node = createGraphNode(normalizedCandidate, kind, { source: 'crawl' });
+    addGraphNode(graph, node);
+
+    if (normalizedOptions.includeExternalLinks || kind !== 'external') {
+      addGraphEdge(graph, siteUrl, normalizedCandidate, kind === 'external' ? 'references' : 'links_to', {
+        discoveredFrom: siteUrl,
+      });
+    }
+  }
+
+  return graph;
+}
+
+export const createSiteGraph = buildSiteGraph;
+export const buildCrawlGraph = buildSiteGraph;
+export const createCrawlGraph = buildSiteGraph;
+export const addSiteGraphNode = addGraphNode;
+export const linkGraphNodes = addGraphEdge;
+export const normalizeUrlForGraph = normalizeGraphUrl;
+export const isUrlInSiteScope = isUrlWithinSiteScope;
