@@ -7,8 +7,8 @@ README.md と AGENTS.md をもとに、レビューしやすい単位で issue �
 - [x] web / worker / shared / config / infra / docs の責務を明文化する
 
 ## Issue 2: 共通型と設定の土台を作る
-- [ ] Graph、Job、Stage、Diagnostic の共有型を定義する
-- [ ] ドメイン判定、CDNマッピング、静的化ルールの設定置き場を決める
+- [x] Graph、Job、Stage、Diagnostic の共有型を定義する
+- [x] ドメイン判定、CDNマッピング、静的化ルールの設定置き場を決める
 
 ## Issue 3: ジョブ状態管理とイベント記録を実装する
 - [ ] `convert-site` のステージ定義を固定する
