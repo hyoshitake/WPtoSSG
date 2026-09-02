@@ -131,3 +131,128 @@ export const JOB_STAGES: JobStage[] = [
 ];
 
 export const STAGE_NAMES: StageName[] = JOB_STAGES;
+
+export const JOB_EVENT_TYPES: JobEvent['type'][] = [
+  'job_state_changed',
+  'stage_progress',
+  'page_done',
+  'warning',
+  'diagnostic_ready',
+  'completed',
+  'failed',
+] as const;
+
+export const DEFAULT_JOB_PROGRESS: JobProgress = {
+  stage: 'PRECHECK',
+  status: 'pending',
+  percent: 0,
+  message: 'Job queued',
+};
+
+export function isValidJobStage(stage: string): stage is JobStage {
+  return JOB_STAGES.includes(stage as JobStage);
+}
+
+export function getJobStageIndex(stage: JobStage): number {
+  const index = JOB_STAGES.indexOf(stage);
+  if (index === -1) {
+    throw new Error(`Unknown job stage: ${stage}`);
+  }
+  return index;
+}
+
+export function getNextStage(stage: JobStage): JobStage | undefined {
+  const currentIndex = getJobStageIndex(stage);
+  return JOB_STAGES[currentIndex + 1];
+}
+
+export function isTerminalStage(stage: JobStage): boolean {
+  return stage === 'FINALIZE';
+}
+
+export function createJobProgress(
+  stage: JobStage,
+  status: JobStatus,
+  percent: number,
+  message: string,
+): JobProgress {
+  if (!isValidJobStage(stage)) {
+    throw new Error(`Unknown job stage: ${stage}`);
+  }
+
+  const safePercent = Number.isFinite(percent) ? Math.min(Math.max(percent, 0), 100) : 0;
+
+  return {
+    stage,
+    status,
+    percent: safePercent,
+    message,
+  };
+}
+
+export function createJobEvent({
+  jobId,
+  stage,
+  type,
+  message,
+  details,
+  timestamp,
+  id,
+}: {
+  jobId: string;
+  stage: JobStage;
+  type: JobEvent['type'];
+  message: string;
+  details?: Record<string, unknown>;
+  timestamp?: string;
+  id?: string;
+}): JobEvent {
+  if (!isValidJobStage(stage)) {
+    throw new Error(`Unknown job stage: ${stage}`);
+  }
+
+  if (!JOB_EVENT_TYPES.includes(type)) {
+    throw new Error(`Unknown job event type: ${type}`);
+  }
+
+  return {
+    id: id ?? `${jobId}:${stage}:${type}:${Date.now()}`,
+    jobId,
+    stage,
+    type,
+    message,
+    details,
+    timestamp: timestamp ?? new Date().toISOString(),
+  };
+}
+
+export interface JobEventEnvelope {
+  id?: string;
+  event: JobEvent['type'];
+  data: JobEvent;
+  retry?: number;
+}
+
+export function createJobEventEnvelope(event: JobEvent): JobEventEnvelope {
+  return {
+    id: event.id,
+    event: event.type,
+    data: event,
+  };
+}
+
+export function serializeSseEvent(event: JobEventEnvelope): string {
+  const payload = JSON.stringify(event.data);
+
+  const lines = [`event: ${event.event}`];
+  if (event.id) {
+    lines.push(`id: ${event.id}`);
+  }
+  if (typeof event.retry === 'number') {
+    lines.push(`retry: ${event.retry}`);
+  }
+  lines.push(`data: ${payload}`);
+  lines.push('');
+
+  return `${lines.join('\n')}\n`;
+}
