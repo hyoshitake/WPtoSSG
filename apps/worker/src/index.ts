@@ -124,17 +124,17 @@ async function expandLazyLoadContent(page: Page, lazyLoadAttributes: string[]): 
 
     const applyAttribute = (selector: string, destination: 'src' | 'srcset', source: string): void => {
       const elements = document.querySelectorAll<HTMLElement>(selector);
-      for (const element of elements) {
+      elements.forEach((element) => {
         const sourceValue = element.getAttribute(source);
         if (!sourceValue) {
-          continue;
+          return;
         }
 
         if (element.getAttribute(destination) !== sourceValue) {
           element.setAttribute(destination, sourceValue);
           updated += 1;
         }
-      }
+      });
     };
 
     for (const attribute of attributes) {
@@ -165,7 +165,7 @@ function normalizeSnapshotHtml(html: string, lazyLoadAttributes: string[]): stri
     });
   }
 
-  return $.html({ decodeEntities: false });
+  return $.html();
 }
 
 async function renderSinglePage(
