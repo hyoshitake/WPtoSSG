@@ -93,7 +93,7 @@ async function performAutoScroll(
   stableHeightThreshold: number,
   waitAfterScrollMs: number,
 ): Promise<number> {
-  let previousHeight = -1;
+  let previousHeight = await page.evaluate(() => document.documentElement.scrollHeight || document.body.scrollHeight || 0);
   let stableRounds = 0;
   let executed = 0;
 
