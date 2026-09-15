@@ -183,7 +183,7 @@ async function renderSinglePage(
 
   try {
     await page.goto(target.url, {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
       timeout: options.navigationTimeoutMs,
     });
     await waitForStableDom(page);
