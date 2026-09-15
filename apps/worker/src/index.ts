@@ -52,6 +52,10 @@ const DEFAULT_STABLE_HEIGHT_THRESHOLD = 2;
 const DEFAULT_MAX_PAGES = 100;
 const DEFAULT_LAZY_LOAD_ATTRIBUTES = ['data-src', 'data-srcset', 'data-lazy-src', 'data-original'];
 
+function resolveLazyLoadDestination(attributeName: string): 'src' | 'srcset' {
+  return attributeName.toLowerCase().includes('srcset') ? 'srcset' : 'src';
+}
+
 function normalizeError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -121,8 +125,11 @@ async function performAutoScroll(
 async function expandLazyLoadContent(page: Page, lazyLoadAttributes: string[]): Promise<number> {
   return page.evaluate((attributes) => {
     let updated = 0;
+    const resolveDestination = (attributeName: string): 'src' | 'srcset' =>
+      attributeName.toLowerCase().includes('srcset') ? 'srcset' : 'src';
 
-    const applyAttribute = (selector: string, destination: 'src' | 'srcset', source: string): void => {
+    const applyAttribute = (selector: string, source: string): void => {
+      const destination = resolveDestination(source);
       const elements = document.querySelectorAll<HTMLElement>(selector);
       elements.forEach((element) => {
         const sourceValue = element.getAttribute(source);
@@ -138,8 +145,7 @@ async function expandLazyLoadContent(page: Page, lazyLoadAttributes: string[]): 
     };
 
     for (const attribute of attributes) {
-      applyAttribute(`[${attribute}]`, 'src', attribute);
-      applyAttribute(`[${attribute}]`, 'srcset', attribute);
+      applyAttribute(`[${attribute}]`, attribute);
     }
 
     return updated;
@@ -150,17 +156,15 @@ function normalizeSnapshotHtml(html: string, lazyLoadAttributes: string[]): stri
   const $ = load(html);
 
   for (const attribute of lazyLoadAttributes) {
+    const destination = resolveLazyLoadDestination(attribute);
     $(`[${attribute}]`).each((_, element) => {
       const lazyValue = $(element).attr(attribute);
       if (!lazyValue) {
         return;
       }
 
-      if (!$(element).attr('src')) {
-        $(element).attr('src', lazyValue);
-      }
-      if (!$(element).attr('srcset')) {
-        $(element).attr('srcset', lazyValue);
+      if (!$(element).attr(destination)) {
+        $(element).attr(destination, lazyValue);
       }
     });
   }
