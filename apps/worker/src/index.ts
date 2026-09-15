@@ -75,7 +75,7 @@ function toSnapshotPath(url: string, snapshotRootDir = '/snapshots'): string {
     const suffix = parsed.search ? `_${encodeURIComponent(parsed.search).replace(/%/g, '_')}` : '';
     const pathname = sanitizedPath ? `${sanitizedPath}` : 'index';
 
-    return `${snapshotRootDir}/${parsed.hostname}/${pathname}${suffix}.html`.replace(/\/\/{2,}/g, '/');
+    return `${snapshotRootDir}/${parsed.hostname}/${pathname}${suffix}.html`.replace(/\/{2,}/g, '/');
   } catch {
     const fallback = encodeURIComponent(url).replace(/%/g, '_');
     return `${snapshotRootDir}/${fallback}.html`;
@@ -123,13 +123,15 @@ async function performAutoScroll(
 }
 
 async function expandLazyLoadContent(page: Page, lazyLoadAttributes: string[]): Promise<number> {
-  return page.evaluate((attributes) => {
-    let updated = 0;
-    const resolveDestination = (attributeName: string): 'src' | 'srcset' =>
-      attributeName.toLowerCase().includes('srcset') ? 'srcset' : 'src';
+  const attributeTargets = lazyLoadAttributes.map((attribute) => ({
+    attribute,
+    destination: resolveLazyLoadDestination(attribute),
+  }));
 
-    const applyAttribute = (selector: string, source: string): void => {
-      const destination = resolveDestination(source);
+  return page.evaluate((targets) => {
+    let updated = 0;
+
+    const applyAttribute = (selector: string, source: string, destination: 'src' | 'srcset'): void => {
       const elements = document.querySelectorAll<HTMLElement>(selector);
       elements.forEach((element) => {
         const sourceValue = element.getAttribute(source);
@@ -144,12 +146,12 @@ async function expandLazyLoadContent(page: Page, lazyLoadAttributes: string[]): 
       });
     };
 
-    for (const attribute of attributes) {
-      applyAttribute(`[${attribute}]`, attribute);
+    for (const target of targets) {
+      applyAttribute(`[${target.attribute}]`, target.attribute, target.destination);
     }
 
     return updated;
-  }, lazyLoadAttributes);
+  }, attributeTargets);
 }
 
 function normalizeSnapshotHtml(html: string, lazyLoadAttributes: string[]): string {
