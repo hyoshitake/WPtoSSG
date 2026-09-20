@@ -194,6 +194,10 @@ async function ensureFolder(
 
   if (cache) {
     cache.set(cacheKey, promise);
+    // Remove poisoned entries so a subsequent caller can retry.
+    promise.catch(() => {
+      cache.delete(cacheKey);
+    });
   }
   return promise;
 }
