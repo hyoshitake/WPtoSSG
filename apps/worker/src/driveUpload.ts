@@ -129,7 +129,8 @@ async function findFolder(
   parentId: string,
   name: string,
 ): Promise<string | undefined> {
-  const escapedName = name.replace(/'/g, "\\'");
+  // Escape backslashes first, then single quotes, to build a safe Drive query string.
+  const escapedName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const response = await drive.files.list({
     q: `'${parentId}' in parents and name = '${escapedName}' and mimeType = '${DRIVE_FOLDER_MIME}' and trashed = false`,
     fields: 'files(id)',
@@ -163,17 +164,38 @@ async function createFolder(
 
 /**
  * Ensure a folder exists under `parentId` (create if absent) and return its ID.
+ *
+ * When an optional `cache` map is provided the promise for each `parentId:name`
+ * key is stored in it, so concurrent callers that share a path prefix will
+ * await the same promise rather than each performing their own
+ * find-then-create pair (which would create duplicate folders).
  */
 async function ensureFolder(
   drive: drive_v3.Drive,
   parentId: string,
   name: string,
+  cache?: Map<string, Promise<string>>,
 ): Promise<string> {
-  const existing = await findFolder(drive, parentId, name);
-  if (existing) {
-    return existing;
+  const cacheKey = `${parentId}:${name}`;
+  if (cache) {
+    const inflight = cache.get(cacheKey);
+    if (inflight) {
+      return inflight;
+    }
   }
-  return createFolder(drive, parentId, name);
+
+  const promise = (async (): Promise<string> => {
+    const existing = await findFolder(drive, parentId, name);
+    if (existing) {
+      return existing;
+    }
+    return createFolder(drive, parentId, name);
+  })();
+
+  if (cache) {
+    cache.set(cacheKey, promise);
+  }
+  return promise;
 }
 
 /**
@@ -200,22 +222,27 @@ async function moveFolder(
  * Upload a single file into a Drive folder, creating intermediate sub-folders
  * as needed for nested relative paths (e.g. `example.com/assets/style.css`).
  *
+ * `folderCache` is a shared map used to deduplicate concurrent sub-folder
+ * creation across parallel workers (see `ensureFolder`).
+ *
  * Returns the Drive file ID on success, or throws on failure.
  */
 async function uploadFile(
   drive: drive_v3.Drive,
   rootFolderId: string,
   file: UploadFile,
+  folderCache: Map<string, Promise<string>>,
 ): Promise<string> {
   const parts = file.relativePath.split('/').filter(Boolean);
   if (parts.length === 0) {
     throw new Error('relativePath must not be empty');
   }
 
-  // Ensure all intermediate sub-folders exist
+  // Ensure all intermediate sub-folders exist, using the shared cache to
+  // avoid creating duplicate folders when concurrent workers share a prefix.
   let parentId = rootFolderId;
   for (const segment of parts.slice(0, -1)) {
-    parentId = await ensureFolder(drive, parentId, segment);
+    parentId = await ensureFolder(drive, parentId, segment, folderCache);
   }
 
   const fileName = parts[parts.length - 1]!;
@@ -249,13 +276,16 @@ async function uploadFiles(
   const failures: Array<{ relativePath: string; reason: string }> = [];
   let uploadedCount = 0;
   let nextIndex = 0;
+  // Shared folder-creation cache prevents duplicate folder creation when
+  // concurrent workers resolve the same intermediate path prefix.
+  const folderCache = new Map<string, Promise<string>>();
 
   async function worker(): Promise<void> {
     while (nextIndex < files.length) {
       const index = nextIndex++;
       const file = files[index]!;
       try {
-        await uploadFile(drive, currentFolderId, file);
+        await uploadFile(drive, currentFolderId, file, folderCache);
         uploadedCount++;
       } catch (error) {
         failures.push({ relativePath: file.relativePath, reason: normalizeError(error) });
@@ -433,7 +463,7 @@ export async function rotateAndUpload(
   } catch (error) {
     const reason = normalizeError(error);
     events.push(
-      createUploadEvent(jobId, 'warning', 'Archive rotation failed', {
+      createUploadEvent(jobId, 'failed', 'Archive rotation failed', {
         reason,
         archiveTimestamp,
       }),
