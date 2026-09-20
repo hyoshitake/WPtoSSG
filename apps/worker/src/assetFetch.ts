@@ -123,10 +123,16 @@ function assetUrlToLocalPath(assetUrl: string): string {
 /**
  * Given a local asset path and the snapshot file path, compute the relative
  * reference so the rewritten HTML can load the asset from disk.
+ * Both paths are normalised to root-relative form (leading slashes and any
+ * leading root directory segment are stripped) before computing the relative path.
  */
 function relativePathFromSnapshot(snapshotPath: string, localAssetPath: string): string {
-  const snapshotSegments = snapshotPath.split('/').slice(0, -1);
-  const assetSegments = localAssetPath.split('/');
+  // Strip leading slashes so absolute filesystem paths (/snapshots/example.com/page.html)
+  // are treated the same as root-relative ones (example.com/page.html).
+  const normalizeSegments = (p: string): string[] => p.replace(/^\/+/, '').split('/').filter(Boolean);
+
+  const snapshotSegments = normalizeSegments(snapshotPath).slice(0, -1); // directory parts
+  const assetSegments = normalizeSegments(localAssetPath);
 
   let commonLength = 0;
   const minLen = Math.min(snapshotSegments.length, assetSegments.length);
@@ -200,7 +206,14 @@ async function runWithConcurrency<T>(
   async function worker(): Promise<void> {
     while (nextIndex < tasks.length) {
       const index = nextIndex++;
-      results[index] = await tasks[index]();
+      try {
+        results[index] = await tasks[index]();
+      } catch (error) {
+        // Tasks are expected to handle their own errors and return error results.
+        // If a task unexpectedly rejects, record a placeholder so the results
+        // array stays consistent and other workers can continue.
+        results[index] = { fetchError: normalizeError(error) } as unknown as T;
+      }
     }
   }
 
