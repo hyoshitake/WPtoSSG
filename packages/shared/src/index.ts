@@ -67,6 +67,24 @@ export interface PageReport {
   snapshotPath?: string;
 }
 
+export interface JobReportFailure {
+  stage: JobStage;
+  target: string;
+  reason: string;
+}
+
+export interface JobStageReport {
+  stage: JobStage;
+  successCount: number;
+  failedCount: number;
+}
+
+export interface JobReportStorage {
+  reportPath: string;
+  currentFolderId?: string;
+  archiveFolderId?: string;
+}
+
 export interface JobReport {
   id: string;
   jobId: string;
@@ -75,6 +93,10 @@ export interface JobReport {
   failedCount: number;
   warnings: number;
   pages: PageReport[];
+  stageBreakdown: JobStageReport[];
+  failures: JobReportFailure[];
+  diagnostic?: DiagnosticResult;
+  storage?: JobReportStorage;
 }
 
 export interface JobProgress {
