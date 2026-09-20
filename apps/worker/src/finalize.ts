@@ -39,6 +39,7 @@ export interface FinalizeResult {
 }
 
 const REPORT_PATH = 'report.json';
+const REPORT_ID_SUFFIX = ':report';
 
 function createFinalizeEvent(
   jobId: string,
@@ -148,8 +149,18 @@ function buildStageBreakdown(options: FinalizeOptions): JobStageReport[] {
     },
   };
 
+  const hasDerivedSource: Partial<Record<JobStage, boolean>> = {
+    RENDER_AND_SNAPSHOT: Boolean(options.renderResult),
+    ASSET_FETCH_AND_REWRITE: Boolean(options.assetResult),
+    DIAGNOSTIC: 'diagnostic' in options,
+    ROTATE_AND_UPLOAD: Boolean(options.uploadResult),
+    FINALIZE: true,
+  };
+
   return JOB_STAGES.map((stage) => {
-    const summary = options.stageBreakdown?.[stage] ?? derived[stage] ?? { successCount: 0, failedCount: 0 };
+    const summary = hasDerivedSource[stage]
+      ? derived[stage] ?? { successCount: 0, failedCount: 0 }
+      : options.stageBreakdown?.[stage] ?? derived[stage] ?? { successCount: 0, failedCount: 0 };
     return {
       stage,
       successCount: summary.successCount,
@@ -161,15 +172,21 @@ function buildStageBreakdown(options: FinalizeOptions): JobStageReport[] {
 export function finalizeJob(options: FinalizeOptions): FinalizeResult {
   const { job } = options;
   const previousEvents = options.previousEvents ?? [];
+  const warnings = countWarnings(previousEvents);
+  const events: JobEvent[] = [
+    createFinalizeEvent(job.id, 'stage_progress', 'FINALIZE stage started', {
+      warningCount: warnings,
+      reportPath: REPORT_PATH,
+    }),
+  ];
   const generatedAt = new Date().toISOString();
   const pages = buildPageReports(options);
   const failures = buildFailures(options);
   const stageBreakdown = buildStageBreakdown(options);
-  const warnings = countWarnings(previousEvents);
   const status = options.fatalError ? 'failed' : 'completed';
 
   const report: JobReport = {
-    id: `${job.id}:report`,
+    id: `${job.id}${REPORT_ID_SUFFIX}`,
     jobId: job.id,
     generatedAt,
     successCount: pages.filter((page) => page.status === 'success').length,
@@ -198,11 +215,7 @@ export function finalizeJob(options: FinalizeOptions): FinalizeResult {
     report,
   };
 
-  const events: JobEvent[] = [
-    createFinalizeEvent(job.id, 'stage_progress', 'FINALIZE stage started', {
-      warningCount: warnings,
-      reportPath: REPORT_PATH,
-    }),
+  events.push(
     createFinalizeEvent(job.id, 'job_state_changed', 'Job status updated', {
       status,
       currentStage: 'FINALIZE',
@@ -220,7 +233,7 @@ export function finalizeJob(options: FinalizeOptions): FinalizeResult {
         reason: options.fatalError?.reason,
       },
     ),
-  ];
+  );
 
   const reportFile: UploadFile = {
     relativePath: REPORT_PATH,
