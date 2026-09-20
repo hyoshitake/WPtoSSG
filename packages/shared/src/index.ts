@@ -504,7 +504,7 @@ export function pageUrlToRelativePath(url: string): string {
     const normalizedPath = parsed.pathname === '/' ? '/index' : parsed.pathname.replace(/\/+$/, '');
     const sanitized = normalizedPath
       .replace(/^\/+/, '')
-      .replace(/[^a-zA-Z0-9/_-]/g, '_')
+      .replace(/[^a-zA-Z0-9/._-]/g, '_')
       .replace(/\/{2,}/g, '/');
     const suffix = parsed.search
       ? `_${encodeURIComponent(parsed.search).replace(/%/g, '_')}`

@@ -70,7 +70,7 @@ function toSnapshotPath(url: string, snapshotRootDir = '/snapshots'): string {
     const normalizedPath = parsed.pathname === '/' ? '/index' : parsed.pathname.replace(/\/+$/, '');
     const sanitizedPath = normalizedPath
       .replace(/^\/+/, '')
-      .replace(/[^a-zA-Z0-9/_-]/g, '_')
+      .replace(/[^a-zA-Z0-9/._-]/g, '_')
       .replace(/\/{2,}/g, '/');
     const suffix = parsed.search ? `_${encodeURIComponent(parsed.search).replace(/%/g, '_')}` : '';
     const pathname = sanitizedPath ? `${sanitizedPath}` : 'index';

@@ -67,9 +67,11 @@ const ASSET_DIR = 'assets';
 const UNSAFE_SCHEMES = ['data:', 'javascript:', 'vbscript:'];
 
 // Attributes that contain asset or link URLs, grouped by tag.
+// `link[href]` is intentionally limited to stylesheet relations to avoid
+// rewriting canonical, alternate, preconnect, and other metadata hrefs.
 const ASSET_SELECTORS: Array<{ selector: string; attr: string }> = [
   { selector: 'script[src]', attr: 'src' },
-  { selector: 'link[href]', attr: 'href' },
+  { selector: 'link[rel~="stylesheet"][href]', attr: 'href' },
   { selector: 'img[src]', attr: 'src' },
   { selector: 'img[srcset]', attr: 'srcset' },
   { selector: 'source[src]', attr: 'src' },
