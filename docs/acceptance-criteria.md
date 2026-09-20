@@ -144,7 +144,8 @@ DIAGNOSTIC ステージ完了後、`risk_level` / `reasons` / `evidence` を含�
 
 #### ハイリスクサイトの確認（任意）
 
-ログインや会員向けと思われる URL（例: `https://login.example.com` や `https://example.com/account`）を入力してジョブを作成した場合、`riskLevel: 'high'` が返されることを確認する。
+`password` 入力フィールドやログイン URL パターン（`/wp-login.php`、`/login` 等）を含むページが存在するサイトを対象にジョブを実行した場合、`riskLevel: 'high'` が返されることを確認する。  
+**注意**: リスクレベルの判定はクロール後のページ HTML に含まれるシグナル（`input[type="password"]`、フォームのアクション URL、インライン XHR 呼び出し等）に基づきます。URL のホスト名やパス名だけでリスクレベルは決まらないため、実際の結果はサイトのコンテンツに依存します。
 
 ### 合格基準
 
