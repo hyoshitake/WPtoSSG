@@ -60,6 +60,8 @@ export interface RotateAndUploadOptions {
    * Defaults to the GOOGLE_DRIVE_ROOT_FOLDER_ID environment variable.
    */
   rootFolderId?: string;
+  /** Maximum number of concurrent file uploads (default: 5). */
+  uploadConcurrency?: number;
 }
 
 export interface RotateAndUploadResult {
@@ -396,6 +398,7 @@ export async function rotateAndUpload(
     maxRotationRetries = DEFAULT_MAX_ROTATION_RETRIES,
     retryDelayMs = DEFAULT_RETRY_DELAY_MS,
     rootFolderId: rootFolderIdOverride,
+    uploadConcurrency = DEFAULT_CONCURRENCY,
   } = options;
 
   const events: JobEvent[] = [];
@@ -506,7 +509,7 @@ export async function rotateAndUpload(
     drive,
     currentFolderId,
     files,
-    DEFAULT_CONCURRENCY,
+    uploadConcurrency,
   );
 
   for (const failure of uploadFailures) {
