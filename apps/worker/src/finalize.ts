@@ -179,11 +179,13 @@ export function finalizeJob(options: FinalizeOptions): FinalizeResult {
     stageBreakdown,
     failures,
     diagnostic: options.diagnostic,
-    storage: {
-      reportPath: REPORT_PATH,
-      currentFolderId: options.uploadResult?.currentFolderId,
-      archiveFolderId: options.uploadResult?.archiveFolderId,
-    },
+    storage: options.uploadResult
+      ? {
+          reportPath: REPORT_PATH,
+          currentFolderId: options.uploadResult.currentFolderId,
+          archiveFolderId: options.uploadResult.archiveFolderId,
+        }
+      : undefined,
   };
 
   const updatedJob: Job = {
