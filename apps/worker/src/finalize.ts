@@ -11,7 +11,23 @@ import type {
 import { JOB_STAGES, createJobEvent } from '@wptossg/shared';
 import type { AssetFetchAndRewriteResult } from './assetFetch.js';
 import type { RotateAndUploadResult, UploadFile } from './driveUpload.js';
-import type { RenderAndSnapshotResult } from './index.js';
+
+interface FinalizeRenderedPage {
+  url: string;
+  finalUrl: string;
+  snapshotPath: string;
+}
+
+interface FinalizeRenderFailure {
+  url: string;
+  reason: string;
+  stage: 'RENDER_AND_SNAPSHOT';
+}
+
+interface FinalizeRenderResult {
+  snapshots: FinalizeRenderedPage[];
+  failures: FinalizeRenderFailure[];
+}
 
 export interface FinalizeFatalError {
   stage?: JobStage;
@@ -22,7 +38,7 @@ export interface FinalizeFatalError {
 export interface FinalizeOptions {
   job: Job;
   previousEvents?: JobEvent[];
-  renderResult?: Pick<RenderAndSnapshotResult, 'snapshots' | 'failures'>;
+  renderResult?: FinalizeRenderResult;
   assetResult?: Pick<AssetFetchAndRewriteResult, 'assets'>;
   diagnostic?: DiagnosticResult;
   uploadResult?: Pick<RotateAndUploadResult, 'currentFolderId' | 'archiveFolderId' | 'uploadedCount' | 'uploadFailures'>;
@@ -173,7 +189,6 @@ export function finalizeJob(options: FinalizeOptions): FinalizeResult {
   const pages = buildPageReports(options);
   const failures = buildFailures(options);
   const stageBreakdown = buildStageBreakdown(options);
-  const status = options.fatalError ? 'failed' : 'completed';
   let successCount = 0;
   let failedCount = 0;
 
@@ -184,6 +199,8 @@ export function finalizeJob(options: FinalizeOptions): FinalizeResult {
       failedCount += 1;
     }
   }
+
+  const status = options.fatalError || (failedCount > 0 && successCount === 0) ? 'failed' : 'completed';
 
   const report: JobReport = {
     id: `${job.id}${REPORT_ID_SUFFIX}`,
