@@ -316,3 +316,5 @@ export async function renderAndSnapshotPages(
     events,
   };
 }
+
+export * from './assetFetch.js';
