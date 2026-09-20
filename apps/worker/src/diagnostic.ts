@@ -128,6 +128,7 @@ function extractPageSignals(url: string, html: string, siteUrl: string): PageSig
   // --- XHR / fetch calls inside inline scripts ---
   let hasXhrCall = false;
   $('script:not([src])').each((_, el) => {
+    if (hasXhrCall) return false; // break early once a match is found
     const text = $(el).html() ?? '';
     if (XHR_INLINE_PATTERNS.some((p) => p.test(text))) {
       hasXhrCall = true;
@@ -183,6 +184,7 @@ function aggregateSignals(
 
   const seenApiUrls = new Set<string>();
   const seenLoginHints = new Set<string>();
+  const seenXhrPages = new Set<string>();
 
   let totalForms = 0;
   let pagesWithXhr = 0;
@@ -202,12 +204,15 @@ function aggregateSignals(
       }
     }
     if (signals.hasXhrCall) {
-      pagesWithXhr += 1;
-      evidence.push({
-        type: 'pattern',
-        location: pageUrl,
-        details: { pattern: 'inline fetch/XHR call detected' },
-      });
+      if (!seenXhrPages.has(pageUrl)) {
+        seenXhrPages.add(pageUrl);
+        pagesWithXhr += 1;
+        evidence.push({
+          type: 'pattern',
+          location: pageUrl,
+          details: { pattern: 'inline fetch/XHR call detected' },
+        });
+      }
     }
 
     // Forms
