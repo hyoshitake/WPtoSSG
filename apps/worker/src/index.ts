@@ -305,3 +305,4 @@ export async function renderAndSnapshotPages(
 }
 
 export * from './assetFetch.js';
+export * from './diagnostic.js';
