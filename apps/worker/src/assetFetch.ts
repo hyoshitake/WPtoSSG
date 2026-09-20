@@ -164,7 +164,7 @@ function relativePathFromSnapshot(snapshotPath: string, localAssetPath: string):
  */
 function parseSrcset(srcset: string, base: string): string[] {
   return srcset
-    .split(/,\s+/)
+    .split(/,\s*/)
     .map((part) => {
       const trimmed = part.trim().split(/\s+/)[0];
       if (!trimmed) return '';
@@ -366,7 +366,7 @@ export function rewriteSnapshotHtml(
 
       if (attr === 'srcset' && rawValue) {
         const rewritten = rawValue
-          .split(/,\s+/)
+          .split(/,\s*/)
           .map((part) => {
             const trimmed = part.trim();
             const parts = trimmed.split(/\s+/);
