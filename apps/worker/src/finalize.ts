@@ -122,7 +122,7 @@ function buildStageBreakdown(options: FinalizeOptions): JobStageReport[] {
     (asset) => !asset.isCdnMapped && Boolean(asset.fetchError),
   ).length;
   const successfulAssets = (options.assetResult?.assets ?? []).filter(
-    (asset) => asset.isCdnMapped || (!asset.isCdnMapped && !asset.fetchError),
+    (asset) => asset.isCdnMapped || !asset.fetchError,
   ).length;
 
   const derived: Partial<Record<JobStage, { successCount: number; failedCount: number }>> = {
@@ -172,8 +172,8 @@ export function finalizeJob(options: FinalizeOptions): FinalizeResult {
     id: `${job.id}:report`,
     jobId: job.id,
     generatedAt,
-    successCount: stageBreakdown.reduce((count, stage) => count + stage.successCount, 0),
-    failedCount: failures.length,
+    successCount: pages.filter((page) => page.status === 'success').length,
+    failedCount: pages.filter((page) => page.status === 'failed').length,
     warnings,
     pages,
     stageBreakdown,
