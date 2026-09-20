@@ -136,7 +136,7 @@ function setStage(record: JobRecord, stage: JobStage, message: string): void {
 function createDiagnostic(siteUrl: string): DiagnosticResult {
   const normalizedUrl = new URL(siteUrl);
 
-  if (/login|account|member/i.test(normalizedUrl.pathname + normalizedUrl.hostname)) {
+  if (/login|account|member/i.test(normalizedUrl.hostname) || /login|account|member/i.test(normalizedUrl.pathname)) {
     return {
       riskLevel: 'high',
       reasons: ['ログイン導線の兆候があり、完全静的化では機能欠落の可能性があります。'],

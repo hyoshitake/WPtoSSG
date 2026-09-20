@@ -7,6 +7,10 @@ export const dynamic = 'force-dynamic';
 const encoder = new TextEncoder();
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
+function isTerminalStatus(status: string): boolean {
+  return status === 'completed' || status === 'failed';
+}
+
 function sendChunk(controller: ReadableStreamDefaultController<Uint8Array>, value: string): void {
   controller.enqueue(encoder.encode(value));
 }
@@ -23,30 +27,27 @@ export async function GET(
   }
 
   const lastEventId = request.headers.get('last-event-id') ?? new URL(request.url).searchParams.get('lastEventId');
-  const isTerminalJob = jobState.job.status === 'completed' || jobState.job.status === 'failed';
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let closed = false;
+      let latestEventId = lastEventId;
+      const resources: {
+        heartbeat?: ReturnType<typeof setInterval>;
+        unsubscribe?: () => void;
+      } = {};
 
       sendChunk(controller, ': connected\n\n');
 
       for (const event of listEvents(id, lastEventId)) {
         sendChunk(controller, serializeSseEvent(createJobEventEnvelope(event)));
+        latestEventId = event.id;
       }
 
-      if (isTerminalJob) {
+      if (isTerminalStatus(jobState.job.status)) {
         controller.close();
         return;
       }
-
-      const unsubscribe = subscribe(id, (event) => {
-        sendChunk(controller, serializeSseEvent(createJobEventEnvelope(event)));
-      });
-
-      const heartbeat = setInterval(() => {
-        sendChunk(controller, `: heartbeat ${new Date().toISOString()}\n\n`);
-      }, HEARTBEAT_INTERVAL_MS);
 
       const close = () => {
         if (closed) {
@@ -54,10 +55,35 @@ export async function GET(
         }
 
         closed = true;
-        clearInterval(heartbeat);
-        unsubscribe?.();
+        if (resources.heartbeat) {
+          clearInterval(resources.heartbeat);
+        }
+        resources.unsubscribe?.();
         controller.close();
       };
+
+      resources.unsubscribe = subscribe(id, (event) => {
+        latestEventId = event.id;
+        sendChunk(controller, serializeSseEvent(createJobEventEnvelope(event)));
+        if (event.type === 'completed' || event.type === 'failed') {
+          close();
+        }
+      });
+
+      for (const event of listEvents(id, latestEventId)) {
+        latestEventId = event.id;
+        sendChunk(controller, serializeSseEvent(createJobEventEnvelope(event)));
+      }
+
+      const currentJobState = getJob(id);
+      if (!resources.unsubscribe || !currentJobState || isTerminalStatus(currentJobState.job.status)) {
+        close();
+        return;
+      }
+
+      resources.heartbeat = setInterval(() => {
+        sendChunk(controller, `: heartbeat ${new Date().toISOString()}\n\n`);
+      }, HEARTBEAT_INTERVAL_MS);
 
       request.signal.addEventListener('abort', close, { once: true });
     },
