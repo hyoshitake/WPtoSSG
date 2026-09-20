@@ -149,18 +149,8 @@ function buildStageBreakdown(options: FinalizeOptions): JobStageReport[] {
     },
   };
 
-  const hasDerivedSource: Partial<Record<JobStage, boolean>> = {
-    RENDER_AND_SNAPSHOT: Boolean(options.renderResult),
-    ASSET_FETCH_AND_REWRITE: Boolean(options.assetResult),
-    DIAGNOSTIC: 'diagnostic' in options,
-    ROTATE_AND_UPLOAD: Boolean(options.uploadResult),
-    FINALIZE: true,
-  };
-
   return JOB_STAGES.map((stage) => {
-    const summary = hasDerivedSource[stage]
-      ? derived[stage] ?? { successCount: 0, failedCount: 0 }
-      : options.stageBreakdown?.[stage] ?? derived[stage] ?? { successCount: 0, failedCount: 0 };
+    const summary = options.stageBreakdown?.[stage] ?? derived[stage] ?? { successCount: 0, failedCount: 0 };
     return {
       stage,
       successCount: summary.successCount,
@@ -184,13 +174,23 @@ export function finalizeJob(options: FinalizeOptions): FinalizeResult {
   const failures = buildFailures(options);
   const stageBreakdown = buildStageBreakdown(options);
   const status = options.fatalError ? 'failed' : 'completed';
+  let successCount = 0;
+  let failedCount = 0;
+
+  for (const page of pages) {
+    if (page.status === 'success') {
+      successCount += 1;
+    } else {
+      failedCount += 1;
+    }
+  }
 
   const report: JobReport = {
     id: `${job.id}${REPORT_ID_SUFFIX}`,
     jobId: job.id,
     generatedAt,
-    successCount: pages.filter((page) => page.status === 'success').length,
-    failedCount: pages.filter((page) => page.status === 'failed').length,
+    successCount,
+    failedCount,
     warnings,
     pages,
     stageBreakdown,
