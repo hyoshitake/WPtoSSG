@@ -1,5 +1,5 @@
 import type { JobEvent } from '@wptossg/shared';
-import { createJobEvent } from '@wptossg/shared';
+import { createJobEvent, pageUrlToRelativePath } from '@wptossg/shared';
 import { isWithinSiteDomain, resolveCdnMapping, STATIC_CONVERSION_RULE } from '@wptossg/config';
 import { load } from 'cheerio';
 import type { RenderedPageSnapshot } from './index.js';
@@ -8,17 +8,27 @@ import type { RenderedPageSnapshot } from './index.js';
 // Public types
 // ---------------------------------------------------------------------------
 
-export interface AssetEntry {
-  /** Absolute URL as found in the original HTML */
-  originalUrl: string;
-  /** Local relative path used after rewriting (e.g. assets/foo.css) */
-  localPath: string;
-  /** Fetched binary content – undefined when fetch failed */
-  content?: Buffer;
-  /** Content-Type from the response, if available */
-  contentType?: string;
-  fetchError?: string;
-}
+/**
+ * Represents a single asset discovered in the HTML.
+ *
+ * `isCdnMapped` distinguishes two cases:
+ *  - `false` (default): `localPath` is a relative on-disk path (e.g. `assets/wp-content/style.css`).
+ *  - `true`: `cdnUrl` holds the canonical CDN URL to use as-is; no download is needed.
+ */
+export type AssetEntry =
+  | {
+      isCdnMapped: false;
+      originalUrl: string;
+      localPath: string;
+      content?: Buffer;
+      contentType?: string;
+      fetchError?: string;
+    }
+  | {
+      isCdnMapped: true;
+      originalUrl: string;
+      cdnUrl: string;
+    };
 
 export interface RewrittenPageSnapshot extends RenderedPageSnapshot {
   /** HTML after URL rewriting */
@@ -50,8 +60,13 @@ const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
 const DEFAULT_CONCURRENCY = 5;
 const ASSET_DIR = 'assets';
 
+/**
+ * URL schemes that must never be fetched or rewritten.
+ * This list covers the schemes flagged by the js/incomplete-url-scheme-check rule.
+ */
+const UNSAFE_SCHEMES = ['data:', 'javascript:', 'vbscript:'];
+
 // Attributes that contain asset or link URLs, grouped by tag.
-// We only follow known patterns to avoid polluting the asset list.
 const ASSET_SELECTORS: Array<{ selector: string; attr: string }> = [
   { selector: 'script[src]', attr: 'src' },
   { selector: 'link[href]', attr: 'href' },
@@ -93,7 +108,6 @@ function createAssetEvent(
 function assetUrlToLocalPath(assetUrl: string): string {
   try {
     const parsed = new URL(assetUrl);
-    // strip leading slash, remove query/hash, sanitise
     const sanitised = parsed.pathname
       .replace(/^\/+/, '')
       .replace(/[^a-zA-Z0-9/._-]/g, '_');
@@ -107,13 +121,9 @@ function assetUrlToLocalPath(assetUrl: string): string {
 /**
  * Given a local asset path and the snapshot file path, compute the relative
  * reference so the rewritten HTML can load the asset from disk.
- * Both paths are relative to snapshotRootDir.
  */
 function relativePathFromSnapshot(snapshotPath: string, localAssetPath: string): string {
-  // snapshotPath: example.com/some/page.html
-  // localAssetPath: assets/wp-content/style.css
-  // result: ../../assets/wp-content/style.css
-  const snapshotSegments = snapshotPath.split('/').slice(0, -1); // directory parts
+  const snapshotSegments = snapshotPath.split('/').slice(0, -1);
   const assetSegments = localAssetPath.split('/');
 
   let commonLength = 0;
@@ -151,13 +161,23 @@ function parseSrcset(srcset: string, base: string): string[] {
 }
 
 /**
+ * Return true if the value starts with any of the unsafe schemes.
+ * Normalised to lowercase before comparison.
+ */
+function hasUnsafeScheme(value: string): boolean {
+  const lower = value.toLowerCase();
+  return UNSAFE_SCHEMES.some((scheme) => lower.startsWith(scheme));
+}
+
+/**
  * Resolve an attribute value to an absolute URL.
- * Returns undefined if the value is empty, a data: URI, or cannot be resolved.
+ * Returns undefined if the value is empty, unsafe (data:, javascript:, vbscript:),
+ * a fragment reference, or cannot be resolved.
  */
 function resolveUrl(value: string | undefined | null, base: string): string | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
-  if (!trimmed || trimmed.startsWith('data:') || trimmed.startsWith('#') || trimmed.startsWith('javascript:')) {
+  if (!trimmed || trimmed.startsWith('#') || hasUnsafeScheme(trimmed)) {
     return undefined;
   }
   try {
@@ -237,8 +257,7 @@ function processAssetUrl(
   // CDN conversion: known libraries are remapped regardless of origin
   const cdnUrl = resolveCdnMapping(url);
   if (cdnUrl) {
-    // We record the mapping but do not download the CDN resource
-    entries.set(url, { originalUrl: url, localPath: cdnUrl });
+    entries.set(url, { isCdnMapped: true, originalUrl: url, cdnUrl });
     return;
   }
 
@@ -247,32 +266,33 @@ function processAssetUrl(
     return; // external – leave intact
   }
 
-  // Check extension allowlist
-  if (!STATIC_CONVERSION_RULE.allowedExtensions.some((ext) => {
-    try {
-      return new URL(url).pathname.toLowerCase().endsWith(ext);
-    } catch {
-      return false;
-    }
-  })) {
+  // Check extension allowlist – parse URL once and reuse
+  let parsedPathname: string;
+  try {
+    parsedPathname = new URL(url).pathname.toLowerCase();
+  } catch {
     return;
   }
 
+  const hasAllowedExtension = STATIC_CONVERSION_RULE.allowedExtensions.some((ext) =>
+    parsedPathname.endsWith(ext),
+  );
+  if (!hasAllowedExtension) return;
+
   entries.set(url, {
+    isCdnMapped: false,
     originalUrl: url,
     localPath: assetUrlToLocalPath(url),
   });
 }
 
 /**
- * Fetch the binary content of a single asset.
+ * Fetch the binary content of a single local asset entry.
  */
-async function fetchAsset(entry: AssetEntry, timeoutMs: number): Promise<AssetEntry> {
-  // CDN-mapped entries (localPath is a full https:// URL) are not fetched
-  if (entry.localPath.startsWith('http')) {
-    return entry;
-  }
-
+async function fetchAsset(
+  entry: AssetEntry & { isCdnMapped: false },
+  timeoutMs: number,
+): Promise<AssetEntry & { isCdnMapped: false }> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -292,6 +312,14 @@ async function fetchAsset(entry: AssetEntry, timeoutMs: number): Promise<AssetEn
   }
 }
 
+/** Resolve the replacement URL/path for a given asset entry. */
+function resolveReplacement(entry: AssetEntry, snapshotPath: string): string {
+  if (entry.isCdnMapped) {
+    return entry.cdnUrl;
+  }
+  return relativePathFromSnapshot(snapshotPath, entry.localPath);
+}
+
 /**
  * Rewrite the HTML of a single snapshot so that:
  * - Internal asset URLs become relative local paths
@@ -305,7 +333,7 @@ export function rewriteSnapshotHtml(
 ): string {
   const $ = load(snapshot.html);
   const base = snapshot.finalUrl || snapshot.url;
-  const snapshotDir = snapshot.snapshotPath;
+  const snapshotPath = snapshot.snapshotPath;
 
   for (const { selector, attr } of ASSET_SELECTORS) {
     $(selector).each((_, element) => {
@@ -323,9 +351,7 @@ export function rewriteSnapshotHtml(
             if (!resolved) return part;
             const entry = assetEntries.get(resolved);
             if (!entry) return part;
-            const replacement = entry.localPath.startsWith('http')
-              ? entry.localPath
-              : relativePathFromSnapshot(snapshotDir, entry.localPath);
+            const replacement = resolveReplacement(entry, snapshotPath);
             return descriptor ? `${replacement} ${descriptor}` : replacement;
           })
           .join(', ');
@@ -339,10 +365,7 @@ export function rewriteSnapshotHtml(
       const entry = assetEntries.get(resolved);
       if (!entry) return;
 
-      const replacement = entry.localPath.startsWith('http')
-        ? entry.localPath
-        : relativePathFromSnapshot(snapshotDir, entry.localPath);
-      $(element).attr(attr, replacement);
+      $(element).attr(attr, resolveReplacement(entry, snapshotPath));
     });
   }
 
@@ -351,7 +374,8 @@ export function rewriteSnapshotHtml(
     const rawHref = $(element).attr('href');
     if (!rawHref) return;
     const trimmed = rawHref.trim();
-    if (trimmed.startsWith('#') || trimmed.startsWith('javascript:') || trimmed.startsWith('mailto:') || trimmed.startsWith('tel:')) {
+    // Guard against unsafe and non-navigable schemes (data:, javascript:, vbscript:, mailto:, tel:, #…)
+    if (trimmed.startsWith('#') || trimmed.startsWith('mailto:') || trimmed.startsWith('tel:') || hasUnsafeScheme(trimmed)) {
       return;
     }
     const resolved = resolveUrl(trimmed, base);
@@ -363,30 +387,13 @@ export function rewriteSnapshotHtml(
     // If it was already rewritten as an asset, skip
     if (assetEntries.has(resolved)) return;
 
-    // Compute relative path for the linked HTML page
-    const linkedSnapshotPath = toLocalHtmlPath(resolved);
-    const relative = relativePathFromSnapshot(snapshotDir, linkedSnapshotPath);
+    // Compute relative path for the linked HTML page using the shared utility
+    const linkedRelativePath = pageUrlToRelativePath(resolved);
+    const relative = relativePathFromSnapshot(snapshotPath, linkedRelativePath);
     $(element).attr('href', relative);
   });
 
   return $.html();
-}
-
-/** Mirror of the worker's toSnapshotPath logic, producing a root-relative path. */
-function toLocalHtmlPath(url: string): string {
-  try {
-    const parsed = new URL(url);
-    const normalizedPath = parsed.pathname === '/' ? '/index' : parsed.pathname.replace(/\/+$/, '');
-    const sanitized = normalizedPath
-      .replace(/^\/+/, '')
-      .replace(/[^a-zA-Z0-9/_-]/g, '_')
-      .replace(/\/{2,}/g, '/');
-    const suffix = parsed.search ? `_${encodeURIComponent(parsed.search).replace(/%/g, '_')}` : '';
-    const pathname = sanitized || 'index';
-    return `${parsed.hostname}/${pathname}${suffix}.html`.replace(/\/{2,}/g, '/');
-  } catch {
-    return encodeURIComponent(url).replace(/%/g, '_') + '.html';
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -426,16 +433,20 @@ export async function fetchAndRewriteAssets(
   // Step 1: collect asset URLs
   const assetMap = collectAssetUrls(snapshots, options.siteUrl);
 
+  const localEntries = [...assetMap.values()].filter(
+    (e): e is AssetEntry & { isCdnMapped: false } => !e.isCdnMapped,
+  );
+  const cdnEntries = [...assetMap.values()].filter((e) => e.isCdnMapped);
+
   events.push(
     createAssetEvent(jobId, 'stage_progress', 'Asset URLs collected', {
-      internalAssetCount: [...assetMap.values()].filter((e) => !e.localPath.startsWith('http')).length,
-      cdnRemappedCount: [...assetMap.values()].filter((e) => e.localPath.startsWith('http')).length,
+      internalAssetCount: localEntries.length,
+      cdnRemappedCount: cdnEntries.length,
     }),
   );
 
   // Step 2: fetch internal assets concurrently
-  const entriesToFetch = [...assetMap.values()].filter((e) => !e.localPath.startsWith('http'));
-  const fetchTasks = entriesToFetch.map((entry) => () => fetchAsset(entry, timeoutMs));
+  const fetchTasks = localEntries.map((entry) => () => fetchAsset(entry, timeoutMs));
   const fetched = await runWithConcurrency(fetchTasks, concurrency);
 
   let successCount = 0;
