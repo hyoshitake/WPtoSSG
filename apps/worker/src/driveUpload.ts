@@ -322,6 +322,12 @@ function buildDriveClient(): drive_v3.Drive {
 
   const auth = new google.auth.GoogleAuth({
     credentials: parsedKey,
+    // The full `drive` scope is required because the root folder
+    // (GOOGLE_DRIVE_ROOT_FOLDER_ID) is a pre-existing folder shared with the
+    // service account from outside this application.  The narrower
+    // `drive.file` scope would only allow access to files/folders created by
+    // this app, which would prevent listing or creating folders inside the
+    // pre-shared root.
     scopes: ['https://www.googleapis.com/auth/drive'],
   });
 
