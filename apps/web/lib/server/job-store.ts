@@ -29,6 +29,10 @@ interface JobStoreState {
 }
 
 const HEARTBEAT_SAFE_DELAY_MS = 450;
+const SIMULATED_GRAPH_NODES_PER_PAGE = 2;
+const SIMULATED_GRAPH_EDGES_PER_PAGE = 3;
+const SIMULATED_INTERNAL_ASSETS_PER_PAGE = 4;
+const SIMULATED_EXTERNAL_ASSETS_PER_JOB = 2;
 const STAGE_PROGRESS: Record<JobStage, number> = {
   PRECHECK: 5,
   CRAWL_GRAPH: 20,
@@ -238,8 +242,8 @@ async function runJob(record: JobRecord): Promise<void> {
     setStage(record, 'CRAWL_GRAPH', 'CRAWL_GRAPH stage started');
     const pageTargets = createPageTargets(record.job.siteUrl);
     emitEvent(record, 'stage_progress', 'Graph discovery completed', {
-      discoveredNodes: pageTargets.length + 5,
-      discoveredEdges: pageTargets.length + 8,
+      discoveredNodes: pageTargets.length * SIMULATED_GRAPH_NODES_PER_PAGE,
+      discoveredEdges: pageTargets.length * SIMULATED_GRAPH_EDGES_PER_PAGE,
     });
     await pause();
 
@@ -264,8 +268,8 @@ async function runJob(record: JobRecord): Promise<void> {
 
     setStage(record, 'ASSET_FETCH_AND_REWRITE', 'ASSET_FETCH_AND_REWRITE stage started');
     emitEvent(record, 'stage_progress', 'Internal assets fetched and rewritten', {
-      fetchedAssets: 14,
-      externalAssetsKept: 3,
+      fetchedAssets: pageTargets.length * SIMULATED_INTERNAL_ASSETS_PER_PAGE,
+      externalAssetsKept: Math.max(SIMULATED_EXTERNAL_ASSETS_PER_JOB, pageTargets.length - 1),
     });
     await pause();
 
