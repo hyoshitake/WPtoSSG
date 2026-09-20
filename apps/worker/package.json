@@ -15,6 +15,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@wptossg/config": "0.1.0",
     "@wptossg/shared": "0.1.0",
     "cheerio": "^1.2.0",
     "playwright": "^1.63.0"

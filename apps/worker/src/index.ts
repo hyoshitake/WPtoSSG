@@ -1,5 +1,5 @@
 import type { JobEvent } from '@wptossg/shared';
-import { createJobEvent } from '@wptossg/shared';
+import { createJobEvent, pageUrlToRelativePath } from '@wptossg/shared';
 import { load } from 'cheerio';
 import { chromium, type Browser, type BrowserContext, type BrowserContextOptions, type LaunchOptions, type Page } from 'playwright';
 
@@ -65,21 +65,8 @@ function normalizeError(error: unknown): string {
 }
 
 function toSnapshotPath(url: string, snapshotRootDir = '/snapshots'): string {
-  try {
-    const parsed = new URL(url);
-    const normalizedPath = parsed.pathname === '/' ? '/index' : parsed.pathname.replace(/\/+$/, '');
-    const sanitizedPath = normalizedPath
-      .replace(/^\/+/, '')
-      .replace(/[^a-zA-Z0-9/_-]/g, '_')
-      .replace(/\/{2,}/g, '/');
-    const suffix = parsed.search ? `_${encodeURIComponent(parsed.search).replace(/%/g, '_')}` : '';
-    const pathname = sanitizedPath ? `${sanitizedPath}` : 'index';
-
-    return `${snapshotRootDir}/${parsed.hostname}/${pathname}${suffix}.html`.replace(/\/{2,}/g, '/');
-  } catch {
-    const fallback = encodeURIComponent(url).replace(/%/g, '_');
-    return `${snapshotRootDir}/${fallback}.html`;
-  }
+  const relativePath = pageUrlToRelativePath(url);
+  return `${snapshotRootDir}/${relativePath}`.replace(/\/{2,}/g, '/');
 }
 
 async function waitForStableDom(page: Page): Promise<void> {
@@ -316,3 +303,5 @@ export async function renderAndSnapshotPages(
     events,
   };
 }
+
+export * from './assetFetch.js';

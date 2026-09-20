@@ -491,3 +491,27 @@ export const addSiteGraphNode = addGraphNode;
 export const linkGraphNodes = addGraphEdge;
 export const normalizeUrlForGraph = normalizeGraphUrl;
 export const isUrlInSiteScope = isUrlWithinSiteScope;
+
+/**
+ * Derive a deterministic root-relative path for a page or asset URL.
+ * Returns a path of the form `{hostname}/{pathname}{querySuffix}.html`.
+ * This is used by both the snapshot writer and the asset rewriter to ensure
+ * that `<a href>` links in rewritten HTML match the actual snapshot paths.
+ */
+export function pageUrlToRelativePath(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const normalizedPath = parsed.pathname === '/' ? '/index' : parsed.pathname.replace(/\/+$/, '');
+    const sanitized = normalizedPath
+      .replace(/^\/+/, '')
+      .replace(/[^a-zA-Z0-9/._-]/g, '_')
+      .replace(/\/{2,}/g, '/');
+    const suffix = parsed.search
+      ? `_${encodeURIComponent(parsed.search).replace(/%/g, '_')}`
+      : '';
+    const pathname = sanitized || 'index';
+    return `${parsed.hostname}/${pathname}${suffix}.html`.replace(/\/{2,}/g, '/');
+  } catch {
+    return `${encodeURIComponent(url).replace(/%/g, '_')}.html`;
+  }
+}
