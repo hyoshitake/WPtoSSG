@@ -307,3 +307,4 @@ export async function renderAndSnapshotPages(
 export * from './assetFetch.js';
 export * from './diagnostic.js';
 export * from './driveUpload.js';
+export * from './finalize.js';
