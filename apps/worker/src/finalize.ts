@@ -140,7 +140,7 @@ function buildStageBreakdown(options: FinalizeOptions): JobStageReport[] {
     },
     ROTATE_AND_UPLOAD: {
       successCount: options.uploadResult?.uploadedCount ?? 0,
-      failedCount: options.uploadResult?.uploadFailures.length ?? 0,
+      failedCount: options.uploadResult?.uploadFailures?.length ?? 0,
     },
     FINALIZE: {
       successCount: options.fatalError ? 0 : 1,
