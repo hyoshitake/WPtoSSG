@@ -8,6 +8,7 @@ import {
   type Job,
   type JobEvent,
   type JobReport,
+  type PageReport,
   type JobStage,
 } from '@wptossg/shared';
 
@@ -18,6 +19,9 @@ interface JobRecord {
   events: JobEvent[];
   listeners: Set<JobListener>;
   running: boolean;
+  pageReports: PageReport[];
+  visitedStages: Set<JobStage>;
+  warningCount: number;
 }
 
 interface JobStoreState {
@@ -97,6 +101,9 @@ function updateJob(record: JobRecord, updates: Partial<Job>): void {
 
 function appendEvent(record: JobRecord, event: JobEvent): void {
   record.events.push(event);
+  if (event.type === 'warning') {
+    record.warningCount += 1;
+  }
   for (const listener of record.listeners) {
     listener(event);
   }
@@ -123,6 +130,7 @@ function emitEvent(
 }
 
 function setStage(record: JobRecord, stage: JobStage, message: string): void {
+  record.visitedStages.add(stage);
   updateJob(record, {
     currentStage: stage,
     status: 'running',
@@ -169,40 +177,42 @@ function createDiagnostic(siteUrl: string): DiagnosticResult {
   };
 }
 
-function createReport(job: Job): JobReport {
-  const siteKey = createSiteKey(job.siteUrl);
+function createPageTargets(siteUrl: string): string[] {
+  const normalizedUrl = new URL(siteUrl);
+  const basePath = normalizedUrl.pathname === '/' ? '' : normalizedUrl.pathname.replace(/\/$/, '');
+
+  return [
+    normalizedUrl.toString(),
+    new URL(`${basePath}/index`, normalizedUrl).toString(),
+    new URL(`${basePath}/contact`, normalizedUrl).toString(),
+  ];
+}
+
+function toSnapshotPath(pageUrl: string, siteUrl: string): string {
+  const pathname = new URL(pageUrl, siteUrl).pathname.replace(/\/$/, '');
+  return pathname === '' || pathname === '/' ? '/snapshots/index.html' : `/snapshots${pathname}/index.html`;
+}
+
+function createReport(record: JobRecord): JobReport {
+  const siteKey = createSiteKey(record.job.siteUrl);
+  const successCount = record.pageReports.filter((page) => page.status === 'success').length;
+  const failedCount = record.pageReports.filter((page) => page.status === 'failed').length;
 
   return {
     id: crypto.randomUUID(),
-    jobId: job.id,
+    jobId: record.job.id,
     generatedAt: new Date().toISOString(),
-    successCount: 3,
-    failedCount: 0,
-    warnings: 1,
-    pages: [
-      {
-        url: job.siteUrl,
-        status: 'success',
-        snapshotPath: '/snapshots/index.html',
-      },
-      {
-        url: new URL('/about', job.siteUrl).toString(),
-        status: 'success',
-        snapshotPath: '/snapshots/about/index.html',
-      },
-      {
-        url: new URL('/contact', job.siteUrl).toString(),
-        status: 'success',
-        snapshotPath: '/snapshots/contact/index.html',
-      },
-    ],
+    successCount,
+    failedCount,
+    warnings: record.warningCount,
+    pages: record.pageReports.map((page) => clone(page)),
     stageBreakdown: JOB_STAGES.map((stage) => ({
       stage,
-      successCount: 1,
+      successCount: record.visitedStages.has(stage) ? 1 : 0,
       failedCount: 0,
     })),
     failures: [],
-    diagnostic: job.diagnostic,
+    diagnostic: record.job.diagnostic,
     storage: {
       reportPath: `/sites/${siteKey}/current/report.json`,
       currentFolderId: `${siteKey}-current`,
@@ -226,20 +236,27 @@ async function runJob(record: JobRecord): Promise<void> {
     await pause();
 
     setStage(record, 'CRAWL_GRAPH', 'CRAWL_GRAPH stage started');
+    const pageTargets = createPageTargets(record.job.siteUrl);
     emitEvent(record, 'stage_progress', 'Graph discovery completed', {
-      discoveredNodes: 8,
-      discoveredEdges: 11,
+      discoveredNodes: pageTargets.length + 5,
+      discoveredEdges: pageTargets.length + 8,
     });
     await pause();
 
     setStage(record, 'RENDER_AND_SNAPSHOT', 'RENDER_AND_SNAPSHOT stage started');
     emitEvent(record, 'stage_progress', 'Rendering queue prepared', {
-      totalPages: 3,
+      totalPages: pageTargets.length,
     });
-    for (const page of [record.job.siteUrl, new URL('/about', record.job.siteUrl).toString(), new URL('/contact', record.job.siteUrl).toString()]) {
+    for (const page of pageTargets) {
+      const snapshotPath = toSnapshotPath(page, record.job.siteUrl);
+      record.pageReports.push({
+        url: page,
+        status: 'success',
+        snapshotPath,
+      });
       emitEvent(record, 'page_done', 'Page rendered and snapshotted', {
         url: page,
-        snapshotPath: page === record.job.siteUrl ? '/snapshots/index.html' : `/snapshots${new URL(page).pathname}/index.html`,
+        snapshotPath,
       });
       await pause(220);
     }
@@ -270,7 +287,7 @@ async function runJob(record: JobRecord): Promise<void> {
     await pause();
 
     setStage(record, 'FINALIZE', 'FINALIZE stage started');
-    const report = createReport(record.job);
+    const report = createReport(record);
     updateJob(record, {
       report,
       status: 'completed',
@@ -296,6 +313,9 @@ export function createJob(siteUrl: string): { job: Job; events: JobEvent[] } {
     events: [],
     listeners: new Set<JobListener>(),
     running: false,
+    pageReports: [],
+    visitedStages: new Set<JobStage>(),
+    warningCount: 0,
   };
 
   store.jobs.set(record.job.id, record);
