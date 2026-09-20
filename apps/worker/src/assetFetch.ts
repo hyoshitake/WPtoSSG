@@ -106,13 +106,18 @@ function createAssetEvent(
 /**
  * Derive a deterministic local path for an asset URL.
  * Example: https://example.com/wp-content/themes/main.css → assets/wp-content/themes/main.css
+ *
+ * Path traversal sequences (`..`) are removed to prevent writing outside ASSET_DIR.
  */
 function assetUrlToLocalPath(assetUrl: string): string {
   try {
     const parsed = new URL(assetUrl);
-    const sanitised = parsed.pathname
-      .replace(/^\/+/, '')
-      .replace(/[^a-zA-Z0-9/._-]/g, '_');
+    // Sanitize individual path segments; filter out empty segments and traversal attempts.
+    const segments = parsed.pathname
+      .split('/')
+      .filter((seg) => seg !== '' && seg !== '.' && seg !== '..')
+      .map((seg) => seg.replace(/[^a-zA-Z0-9._-]/g, '_'));
+    const sanitised = segments.join('/');
     return `${ASSET_DIR}/${sanitised || 'asset'}`;
   } catch {
     const fallback = encodeURIComponent(assetUrl).replace(/%/g, '_');
@@ -152,10 +157,14 @@ function relativePathFromSnapshot(snapshotPath: string, localAssetPath: string):
 /**
  * Extract all unique asset URLs from srcset values.
  * "image-320w.jpg 320w, image-640w.jpg 640w" → ["image-320w.jpg", "image-640w.jpg"]
+ *
+ * Splits on `,` followed by whitespace (`,\s+`) rather than a bare `,` to
+ * avoid incorrectly splitting URLs that contain a comma in their query string
+ * (e.g. `img.jpg?a=1,b=2 640w`).
  */
 function parseSrcset(srcset: string, base: string): string[] {
   return srcset
-    .split(',')
+    .split(/,\s+/)
     .map((part) => {
       const trimmed = part.trim().split(/\s+/)[0];
       if (!trimmed) return '';
@@ -348,7 +357,8 @@ export function rewriteSnapshotHtml(
 ): string {
   const $ = load(snapshot.html);
   const base = snapshot.finalUrl || snapshot.url;
-  const snapshotPath = snapshot.snapshotPath;
+  // Guard against absent snapshotPath (e.g. snapshot not yet written to disk).
+  const snapshotPath = snapshot.snapshotPath || pageUrlToRelativePath(base);
 
   for (const { selector, attr } of ASSET_SELECTORS) {
     $(selector).each((_, element) => {
@@ -356,7 +366,7 @@ export function rewriteSnapshotHtml(
 
       if (attr === 'srcset' && rawValue) {
         const rewritten = rawValue
-          .split(',')
+          .split(/,\s+/)
           .map((part) => {
             const trimmed = part.trim();
             const parts = trimmed.split(/\s+/);
