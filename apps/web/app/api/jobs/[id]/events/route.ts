@@ -16,20 +16,28 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const { id } = await context.params;
-  const job = getJob(id);
+  const jobState = getJob(id);
 
-  if (!job) {
+  if (!jobState) {
     return Response.json({ error: 'Job not found.' }, { status: 404 });
   }
 
   const lastEventId = request.headers.get('last-event-id') ?? new URL(request.url).searchParams.get('lastEventId');
+  const isTerminalJob = jobState.job.status === 'completed' || jobState.job.status === 'failed';
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
+      let closed = false;
+
       sendChunk(controller, ': connected\n\n');
 
       for (const event of listEvents(id, lastEventId)) {
         sendChunk(controller, serializeSseEvent(createJobEventEnvelope(event)));
+      }
+
+      if (isTerminalJob) {
+        controller.close();
+        return;
       }
 
       const unsubscribe = subscribe(id, (event) => {
@@ -41,6 +49,11 @@ export async function GET(
       }, HEARTBEAT_INTERVAL_MS);
 
       const close = () => {
+        if (closed) {
+          return;
+        }
+
+        closed = true;
         clearInterval(heartbeat);
         unsubscribe?.();
         controller.close();
