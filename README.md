@@ -192,21 +192,51 @@ WPtoSSG は責務ごとに 4 層に分割し、重い処理を Worker に閉じ�
 
 ---
 
-## セットアップ（予定）
+## ローカル開発（Docker Compose）
 
-> 初期実装中。詳細な手順は今後更新します。
+ローカルで Web / Worker / Redis / PostgreSQL をまとめて起動できます。
 
-必要サービス:
+### 1. 環境変数を作成
 
-- Vercel（web）
-- Railway（worker + redis）
-- Supabase（postgres）
-- Google Cloud（Drive API サービスアカウント）
+```bash
+cp .env.example .env
+```
 
-主な環境変数（例）:
+`GOOGLE_DRIVE_ENABLED=false` のままなら、Drive 連携を無効化したローカル検証モードで起動できます。  
+実際に Drive へアップロードしたい場合は `GOOGLE_DRIVE_ENABLED=true` にし、`GOOGLE_SERVICE_ACCOUNT_KEY` と `GOOGLE_DRIVE_ROOT_FOLDER_ID` を設定してください。
+
+### 2. 起動
+
+```bash
+docker compose up --build
+```
+
+起動後:
+
+- Web UI: `http://localhost:3000`
+- Worker health: `http://localhost:4001/healthz`
+- PostgreSQL: `localhost:5432`
+- Redis: `localhost:6379`
+
+### 3. 動作確認
+
+1. Web UI からジョブを作成する
+2. SSE エンドポイント（`/api/jobs/:id/events`）で進捗イベントが流れることを確認する
+3. `docker compose logs -f worker` で Redis/PostgreSQL 接続チェックログを確認する
+
+### 4. よくあるエラー
+
+- `web` / `worker` が依存サービス待ちになる  
+  → `docker compose ps` で `postgres` と `redis` の health が `healthy` になるまで待機してください。
+- Drive 関連の環境変数未設定エラー  
+  → ローカルでは `GOOGLE_DRIVE_ENABLED=false` を利用してください。
+
+---
+
+## クラウド環境で必要な主な環境変数（例）
 
 - `DATABASE_URL`
 - `REDIS_URL`
-- `GOOGLE_SERVICE_ACCOUNT_JSON`
+- `GOOGLE_SERVICE_ACCOUNT_KEY`
 - `GOOGLE_DRIVE_ROOT_FOLDER_ID`
 - `NEXT_PUBLIC_APP_URL`
