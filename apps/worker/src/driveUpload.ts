@@ -416,6 +416,26 @@ export async function rotateAndUpload(
     }),
   );
 
+  const driveEnabled = process.env['GOOGLE_DRIVE_ENABLED']?.toLowerCase() !== 'false';
+  if (!driveEnabled) {
+    events.push(
+      createUploadEvent(jobId, 'warning', 'Google Drive upload disabled for local mode', {
+        siteKey,
+      }),
+      createUploadEvent(jobId, 'stage_progress', 'ROTATE_AND_UPLOAD stage finished (stub mode)', {
+        uploadedCount: 0,
+        failedCount: 0,
+      }),
+    );
+    return {
+      currentFolderId: `${siteKey}-current-local`,
+      archiveFolderId: `${siteKey}-archive-local`,
+      uploadedCount: 0,
+      uploadFailures: [],
+      events,
+    };
+  }
+
   // --- Build or reuse Drive client ---
   let drive: drive_v3.Drive;
   try {
