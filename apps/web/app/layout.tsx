@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import './globals.css';
+import { Sidebar } from './sidebar';
 
 export const metadata: Metadata = {
   title: 'WPtoSSG Job Console',
@@ -10,7 +11,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ja" className="h-full antialiased">
-      <body className="min-h-full bg-slate-950 text-slate-50">{children}</body>
+      <body className="min-h-full bg-slate-950 text-slate-50">
+        <Sidebar />
+        <div className="min-h-screen pl-20">{children}</div>
+      </body>
     </html>
   );
 }

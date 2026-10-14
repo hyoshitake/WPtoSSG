@@ -30,3 +30,26 @@ body {
 a {
   color: inherit;
 }
+
+.sidebar-tooltip {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.sidebar-link {
+  color: #94a3b8;
+}
+
+.sidebar-link:hover {
+  color: var(--foreground);
+}
+
+.sidebar-link[aria-current='page'] {
+  color: var(--background);
+}
+
+.sidebar-link:hover .sidebar-tooltip,
+.sidebar-link:focus-visible .sidebar-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
