@@ -1,5 +1,5 @@
-import { createJobEventEnvelope, serializeSseEvent } from '@wptossg/shared';
-import { getJob, listEvents, subscribe } from '../../../../../lib/server/job-store';
+import { createJobEventEnvelope, isTerminalJobStatus, serializeSseEvent, type JobEvent } from '@wptossg/shared';
+import { followEvents, getJob } from '../../../../../lib/server/job-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -7,12 +7,8 @@ export const dynamic = 'force-dynamic';
 const encoder = new TextEncoder();
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
-function isTerminalStatus(status: string): boolean {
-  return status === 'completed' || status === 'failed';
-}
-
-function sendChunk(controller: ReadableStreamDefaultController<Uint8Array>, value: string): void {
-  controller.enqueue(encoder.encode(value));
+function isTerminalEvent(event: JobEvent): boolean {
+  return event.type === 'completed' || event.type === 'failed';
 }
 
 export async function GET(
@@ -20,72 +16,65 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const { id } = await context.params;
-  const jobState = getJob(id);
+  const jobState = await getJob(id);
 
   if (!jobState) {
     return Response.json({ error: 'Job not found.' }, { status: 404 });
   }
 
   const lastEventId = request.headers.get('last-event-id') ?? new URL(request.url).searchParams.get('lastEventId');
+  const abort = new AbortController();
+  request.signal.addEventListener('abort', () => abort.abort(), { once: true });
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let closed = false;
-      let latestEventId = lastEventId;
-      const resources: {
-        heartbeat?: ReturnType<typeof setInterval>;
-        unsubscribe?: () => void;
-      } = {};
-
-      sendChunk(controller, ': connected\n\n');
-
-      for (const event of listEvents(id, lastEventId)) {
-        sendChunk(controller, serializeSseEvent(createJobEventEnvelope(event)));
-        latestEventId = event.id;
-      }
-
-      if (isTerminalStatus(jobState.job.status)) {
-        controller.close();
-        return;
-      }
-
+      const send = (value: string) => {
+        if (!closed) {
+          controller.enqueue(encoder.encode(value));
+        }
+      };
       const close = () => {
         if (closed) {
           return;
         }
-
         closed = true;
-        if (resources.heartbeat) {
-          clearInterval(resources.heartbeat);
-        }
-        resources.unsubscribe?.();
+        abort.abort();
         controller.close();
       };
 
-      resources.unsubscribe = subscribe(id, (event) => {
-        latestEventId = event.id;
-        sendChunk(controller, serializeSseEvent(createJobEventEnvelope(event)));
-        if (event.type === 'completed' || event.type === 'failed') {
-          close();
-        }
-      });
+      send(': connected\n\n');
 
-      for (const event of listEvents(id, latestEventId)) {
-        latestEventId = event.id;
-        sendChunk(controller, serializeSseEvent(createJobEventEnvelope(event)));
-      }
+      // Replays everything after Last-Event-ID, then blocks for new events.
+      followEvents(
+        id,
+        lastEventId,
+        {
+          onEvent: (event) => {
+            send(serializeSseEvent(createJobEventEnvelope(event)));
+            if (isTerminalEvent(event)) {
+              close();
+            }
+          },
+          onIdle: () => {
+            send(`: heartbeat ${new Date().toISOString()}\n\n`);
+          },
+        },
+        { signal: abort.signal, blockMs: HEARTBEAT_INTERVAL_MS },
+      )
+        .catch((error: unknown) => {
+          console.error(JSON.stringify({ level: 'error', message: 'SSE stream failed', jobId: id, reason: String(error) }));
+        })
+        .finally(close);
 
-      const currentJobState = getJob(id);
-      if (!resources.unsubscribe || !currentJobState || isTerminalStatus(currentJobState.job.status)) {
+      // A job that already finished before the client connected has its terminal
+      // event in the replay; this only guards against a missing terminal event.
+      if (isTerminalJobStatus(jobState.job.status) && jobState.events.every((event) => !isTerminalEvent(event))) {
         close();
-        return;
       }
-
-      resources.heartbeat = setInterval(() => {
-        sendChunk(controller, `: heartbeat ${new Date().toISOString()}\n\n`);
-      }, HEARTBEAT_INTERVAL_MS);
-
-      request.signal.addEventListener('abort', close, { once: true });
+    },
+    cancel() {
+      abort.abort();
     },
   });
 

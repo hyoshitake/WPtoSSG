@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Load the Redis/BullMQ clients from node_modules at runtime instead of bundling them.
+  serverExternalPackages: ["bullmq", "ioredis"],
 };
 
 export default nextConfig;

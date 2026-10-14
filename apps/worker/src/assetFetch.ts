@@ -354,6 +354,12 @@ export function rewriteSnapshotHtml(
   snapshot: RenderedPageSnapshot,
   assetEntries: Map<string, AssetEntry>,
   siteUrl: string,
+  /**
+   * Relative paths of every page in this snapshot set. When given, links to
+   * same-site pages outside the set (not crawled, disallowed, 404) point at
+   * the live URL instead of a local file that does not exist.
+   */
+  snapshotPaths?: Set<string>,
 ): string {
   const $ = load(snapshot.html);
   const base = snapshot.finalUrl || snapshot.url;
@@ -412,10 +418,21 @@ export function rewriteSnapshotHtml(
     // If it was already rewritten as an asset, skip
     if (assetEntries.has(resolved)) return;
 
+    // Pages are crawled with query strings normalised away, so link to the
+    // query-less snapshot and carry the fragment over.
+    const linkedUrl = new URL(resolved);
+    const fragment = linkedUrl.hash;
+    linkedUrl.search = '';
+    linkedUrl.hash = '';
+
     // Compute relative path for the linked HTML page using the shared utility
-    const linkedRelativePath = pageUrlToRelativePath(resolved);
+    const linkedRelativePath = pageUrlToRelativePath(linkedUrl.toString());
+    if (snapshotPaths && !snapshotPaths.has(linkedRelativePath)) {
+      $(element).attr('href', resolved);
+      return;
+    }
     const relative = relativePathFromSnapshot(snapshotPath, linkedRelativePath);
-    $(element).attr('href', relative);
+    $(element).attr('href', `${relative}${fragment}`);
   });
 
   return $.html();
@@ -499,9 +516,10 @@ export async function fetchAndRewriteAssets(
   );
 
   // Step 3: rewrite HTML
+  const snapshotPaths = new Set(snapshots.map((snapshot) => pageUrlToRelativePath(snapshot.finalUrl || snapshot.url)));
   const pages: RewrittenPageSnapshot[] = snapshots.map((snapshot) => ({
     ...snapshot,
-    rewrittenHtml: rewriteSnapshotHtml(snapshot, assetMap, options.siteUrl),
+    rewrittenHtml: rewriteSnapshotHtml(snapshot, assetMap, options.siteUrl, snapshotPaths),
   }));
 
   events.push(

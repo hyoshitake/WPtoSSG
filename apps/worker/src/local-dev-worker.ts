@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import net from 'node:net';
+import { startQueueWorker } from './queueWorker.js';
 
 interface ServiceHealth {
   ok: boolean;
@@ -134,3 +135,15 @@ server.listen(healthPort, '0.0.0.0', () => {
     }),
   );
 });
+
+const queueWorker = startQueueWorker(redisUrl);
+
+const shutdown = async (signal: string): Promise<void> => {
+  console.log(JSON.stringify({ level: 'info', message: 'shutting down worker', signal }));
+  // Let the running job release its lock so it is not left stalled.
+  await queueWorker.close();
+  server.close();
+  process.exit(0);
+};
+process.once('SIGTERM', () => void shutdown('SIGTERM'));
+process.once('SIGINT', () => void shutdown('SIGINT'));

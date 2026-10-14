@@ -24,7 +24,7 @@ export const DOMAIN_RULE: DomainRule = {
 export const DEFAULT_DOMAIN_RULE: DomainRule = DOMAIN_RULE;
 
 export const CDN_MAPPINGS: Record<string, string> = {
-  jquery: 'https://cdn.jsdelivr.net/npm/jquery@3.12.4/dist/jquery.min.js',
+  jquery: 'https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js',
   react: 'https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js',
   'react-dom': 'https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js',
   bootstrap: 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js',

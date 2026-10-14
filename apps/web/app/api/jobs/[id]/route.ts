@@ -8,7 +8,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const { id } = await context.params;
-  const job = getJob(id);
+  const job = await getJob(id);
 
   if (!job) {
     return Response.json({ error: 'Job not found.' }, { status: 404 });

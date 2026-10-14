@@ -18,6 +18,10 @@
  *   GOOGLE_DRIVE_ROOT_FOLDER_ID  – ID of the root folder in Drive that contains
  *                                   the `sites/` tree (must be pre-shared with
  *                                   the service account).
+ *
+ * Shared drives are supported (all Drive calls pass `supportsAllDrives`).
+ * Prefer a shared drive: service accounts have no storage quota of their own,
+ * so uploads into a user's My Drive folder fail with a quota error.
  */
 
 import type { JobEvent } from '@wptossg/shared';
@@ -137,6 +141,8 @@ async function findFolder(
     q: `'${parentId}' in parents and name = '${escapedName}' and mimeType = '${DRIVE_FOLDER_MIME}' and trashed = false`,
     fields: 'files(id)',
     pageSize: 1,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
   });
   return response.data.files?.[0]?.id ?? undefined;
 }
@@ -156,6 +162,7 @@ async function createFolder(
       parents: [parentId],
     },
     fields: 'id',
+    supportsAllDrives: true,
   });
   const id = response.data.id;
   if (!id) {
@@ -221,6 +228,7 @@ async function moveFolder(
     removeParents: oldParentId,
     requestBody: newName ? { name: newName } : undefined,
     fields: 'id',
+    supportsAllDrives: true,
   });
 }
 
@@ -263,6 +271,7 @@ async function uploadFile(
       body: bufferToStream(file.content),
     },
     fields: 'id',
+    supportsAllDrives: true,
   });
 
   const id = response.data.id;
@@ -332,6 +341,24 @@ function buildDriveClient(): drive_v3.Drive {
   });
 
   return google.drive({ version: 'v3', auth });
+}
+
+/**
+ * Upload files into an existing Drive folder (e.g. `report.json` into the
+ * `current` folder created by `rotateAndUpload`). Per-file failures are
+ * returned, not thrown.
+ */
+export async function uploadFilesToDriveFolder(
+  folderId: string,
+  files: UploadFile[],
+  options: { driveClient?: drive_v3.Drive; concurrency?: number } = {},
+): Promise<{ uploadedCount: number; failures: Array<{ relativePath: string; reason: string }> }> {
+  const drive = options.driveClient ?? buildDriveClient();
+  return uploadFiles(drive, folderId, files, options.concurrency ?? DEFAULT_CONCURRENCY);
+}
+
+export function driveFolderUrl(folderId: string): string {
+  return `https://drive.google.com/drive/folders/${folderId}`;
 }
 
 // ---------------------------------------------------------------------------

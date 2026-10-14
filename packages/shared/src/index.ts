@@ -79,10 +79,15 @@ export interface JobStageReport {
   failedCount: number;
 }
 
+export type StorageBackend = 'google-drive' | 'local';
+
 export interface JobReportStorage {
   reportPath: string;
+  backend?: StorageBackend;
   currentFolderId?: string;
   archiveFolderId?: string;
+  /** Browsable location of `current` (Drive folder URL or local directory). */
+  currentLocation?: string;
 }
 
 export interface JobReport {
@@ -246,6 +251,41 @@ export function createJobEvent({
     details,
     timestamp: timestamp ?? new Date().toISOString(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Queue / job state contract shared by web (producer) and worker (consumer)
+// ---------------------------------------------------------------------------
+
+export const CONVERT_SITE_QUEUE = 'convert-site';
+
+export interface ConvertSiteJobData {
+  jobId: string;
+  siteUrl: string;
+  siteKey: string;
+}
+
+/** Job state and event log retention in Redis. */
+export const JOB_STATE_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/** Redis key holding the latest `Job` snapshot as JSON. */
+export function jobStateKey(jobId: string): string {
+  return `wptossg:job:${jobId}`;
+}
+
+/** Redis stream holding the job's `JobEvent` log; entry IDs double as SSE event IDs. */
+export function jobEventsKey(jobId: string): string {
+  return `wptossg:job:${jobId}:events`;
+}
+
+export function isTerminalJobStatus(status: JobStatus): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+}
+
+/** Folder name used under `/sites/` for a site, e.g. `https://oyama-cl.jp` → `oyama-cl-jp`. */
+export function createSiteKey(siteUrl: string): string {
+  const hostname = new URL(siteUrl).hostname;
+  return hostname.replace(/[^a-z0-9]+/gi, '-').replace(/(^-|-$)/g, '').toLowerCase() || 'site';
 }
 
 export interface JobEventEnvelope {
@@ -532,7 +572,9 @@ export function pageUrlToRelativePath(url: string): string {
       ? `_${encodeURIComponent(parsed.search).replace(/%/g, '_')}`
       : '';
     const pathname = sanitized || 'index';
-    return `${parsed.hostname}/${pathname}${suffix}.html`.replace(/\/{2,}/g, '/');
+    // Keep existing `.html`/`.htm` names as-is rather than producing `page.html.html`.
+    const extension = !suffix && /\.html?$/i.test(pathname) ? '' : '.html';
+    return `${parsed.hostname}/${pathname}${suffix}${extension}`.replace(/\/{2,}/g, '/');
   } catch {
     return `${encodeURIComponent(url).replace(/%/g, '_')}.html`;
   }

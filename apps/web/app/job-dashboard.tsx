@@ -311,8 +311,39 @@ export function JobDashboard() {
                 </div>
                 <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-400">report.json</p>
-                  <p className="mt-2 break-all text-slate-100">{report.storage?.reportPath ?? '未生成'}</p>
+                  <p className="mt-2 break-all text-slate-100">
+                    {report.storage?.reportPath ?? '未保存（保存前にジョブが失敗しました）'}
+                  </p>
+                  {report.storage?.currentLocation ? (
+                    <p className="mt-2 break-all text-xs text-slate-400">
+                      {report.storage.backend === 'google-drive' ? 'Google Drive: ' : 'Worker ローカル: '}
+                      {report.storage.currentLocation.startsWith('https://') ? (
+                        <a
+                          className="text-cyan-300 underline hover:text-cyan-200"
+                          href={report.storage.currentLocation}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          current フォルダを開く
+                        </a>
+                      ) : (
+                        report.storage.currentLocation
+                      )}
+                    </p>
+                  ) : null}
                 </div>
+                {report.failures.length > 0 ? (
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">失敗内訳 ({report.failures.length})</p>
+                    <ul className="mt-2 max-h-48 space-y-2 overflow-y-auto text-xs text-slate-300">
+                      {report.failures.map((failure, index) => (
+                        <li key={`${failure.stage}:${failure.target}:${index}`} className="break-all">
+                          <span className="text-slate-400">{failure.stage}</span> {failure.target}: {failure.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <p className="mt-4 text-sm text-slate-400">FINALIZE 完了後に report.json の要約を表示します。</p>

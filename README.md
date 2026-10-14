@@ -205,9 +205,33 @@ cp .env.example .env
 `GOOGLE_DRIVE_ENABLED=false` のままなら、Drive 連携を無効化したローカル検証モードで起動できます。  
 実際に Drive へアップロードしたい場合は `GOOGLE_DRIVE_ENABLED=true` にし、`GOOGLE_SERVICE_ACCOUNT_KEY` と `GOOGLE_DRIVE_ROOT_FOLDER_ID` を設定してください。
 
+Drive の準備:
+
+- `GOOGLE_SERVICE_ACCOUNT_KEY` には、サービスアカウント鍵の JSON の中身を 1 行にしたもの（例: `jq -c . key.json` の出力）を設定します。`.env` ではシングルクォートで囲んでください。
+- 保存先には **共有ドライブ** 内のフォルダを使ってください。サービスアカウントは自身のストレージ容量を持たないため、マイドライブのフォルダにはアップロードできません。
+- 共有ドライブのメンバーに、サービスアカウントのメールアドレス（鍵 JSON の `client_email`）を **コンテンツ管理者** 以上で追加してください（`current` を `archive` へ移動するのに必要です）。
+- `GOOGLE_DRIVE_ROOT_FOLDER_ID` には、共有ドライブ内のルートフォルダの ID（URL の `folders/` 以降）を設定します。
+
+変換結果の保存先:
+
+- `GOOGLE_DRIVE_ENABLED=true`: Drive の `{GOOGLE_DRIVE_ROOT_FOLDER_ID}/sites/{siteKey}/current/`（以前の `current` は `archive/{timestamp}/` へ退避）
+- `GOOGLE_DRIVE_ENABLED=false`: Worker コンテナの `/workspace/output/sites/{siteKey}/current/`（ホストではリポジトリ直下の `output/`）。退避ルールは Drive と同じです。
+
+その他の Worker 設定（任意）: `MAX_PAGES`（既定 99）、`RESPECT_ROBOTS_TXT`（既定 `true`）、`LOCAL_OUTPUT_DIR`。
+
+処理の流れ: Web (`POST /api/jobs`) が BullMQ の `convert-site` キューへ投入 → Worker が 7 ステージを実行し、ジョブ状態とイベントを Redis（Stream）へ書き込む → Web の SSE (`/api/jobs/:id/events`) がその Stream を配信します。
+
 ### 2. 起動
 
 ```bash
+docker compose up --build
+```
+
+依存パッケージを追加・更新した後は、`node_modules` 用の名前付きボリュームが古いまま残るため、作り直してから起動してください。
+
+```bash
+docker compose down
+docker volume rm wptossg_root_node_modules wptossg_web_node_modules wptossg_worker_node_modules
 docker compose up --build
 ```
 

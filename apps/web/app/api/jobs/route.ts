@@ -20,7 +20,7 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const siteUrl = normalizeSiteUrl(body.siteUrl.trim());
-    const result = createJob(siteUrl);
+    const result = await createJob(siteUrl);
     return Response.json(result, { status: 201 });
   } catch (error) {
     return Response.json(

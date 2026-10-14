@@ -19,6 +19,8 @@ export interface SnapshotRuntimeOptions {
   maxPages?: number;
   lazyLoadAttributes?: string[];
   snapshotRootDir?: string;
+  /** Called as each event is produced, so callers can stream progress before the stage returns. */
+  onEvent?: (event: JobEvent) => void;
 }
 
 export interface RenderedPageSnapshot {
@@ -239,14 +241,19 @@ export async function renderAndSnapshotPages(
 
   const snapshots: RenderedPageSnapshot[] = [];
   const failures: PageRenderFailure[] = [];
-  const events: JobEvent[] = [
+  const events: JobEvent[] = [];
+  const pushEvent = (event: JobEvent): void => {
+    events.push(event);
+    options.onEvent?.(event);
+  };
+  pushEvent(
     createRenderEvent(jobId, 'stage_progress', 'Rendering and snapshot started', {
       totalPages: limitedPages.length,
     }),
-  ];
+  );
 
   if (limitedPages.length === 0) {
-    events.push(createRenderEvent(jobId, 'warning', 'No pages were provided for rendering'));
+    pushEvent(createRenderEvent(jobId, 'warning', 'No pages were provided for rendering'));
     return { snapshots, failures, events };
   }
 
@@ -257,7 +264,7 @@ export async function renderAndSnapshotPages(
         try {
           const snapshot = await renderSinglePage(context, page, normalizedOptions);
           snapshots.push(snapshot);
-          events.push(
+          pushEvent(
             createRenderEvent(jobId, 'page_done', 'Page rendered and snapshotted', {
               index,
               url: page.url,
@@ -275,7 +282,7 @@ export async function renderAndSnapshotPages(
             reason,
             stage: 'RENDER_AND_SNAPSHOT',
           });
-          events.push(
+          pushEvent(
             createRenderEvent(jobId, 'warning', 'Page rendering failed and pipeline continued', {
               index,
               url: page.url,
@@ -289,7 +296,7 @@ export async function renderAndSnapshotPages(
     }
   });
 
-  events.push(
+  pushEvent(
     createRenderEvent(jobId, 'stage_progress', 'Rendering and snapshot finished', {
       totalPages: limitedPages.length,
       successCount: snapshots.length,
@@ -308,3 +315,5 @@ export * from './assetFetch.js';
 export * from './diagnostic.js';
 export * from './driveUpload.js';
 export * from './finalize.js';
+export * from './crawl.js';
+export * from './localOutput.js';

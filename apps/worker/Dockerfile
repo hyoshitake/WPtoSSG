@@ -11,6 +11,9 @@ COPY packages/config/package.json packages/config/package.json
 
 RUN npm ci
 
+# Chromium + system libraries for Playwright (RENDER_AND_SNAPSHOT stage).
+RUN npx playwright install --with-deps chromium
+
 COPY . .
 
 EXPOSE 4001

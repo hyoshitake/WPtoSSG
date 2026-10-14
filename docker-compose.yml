@@ -42,17 +42,15 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - '3000:3000'
+      - ${NEXT_PUBLIC_APP_PORT}:3000
     volumes:
       - .:/workspace
       - root_node_modules:/workspace/node_modules
       - web_node_modules:/workspace/apps/web/node_modules
-    command: npm run dev:web -- --hostname 0.0.0.0 --port 3000
-    healthcheck:
-      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
+    # command: sh
+    tty: true
+    stdin_open: true
+    command: npm run dev:web
 
   worker:
     build:
@@ -65,6 +63,10 @@ services:
       GOOGLE_DRIVE_ENABLED: ${GOOGLE_DRIVE_ENABLED:-false}
       GOOGLE_SERVICE_ACCOUNT_KEY: ${GOOGLE_SERVICE_ACCOUNT_KEY:-}
       GOOGLE_DRIVE_ROOT_FOLDER_ID: ${GOOGLE_DRIVE_ROOT_FOLDER_ID:-}
+      # Used when GOOGLE_DRIVE_ENABLED=false; ./output on the host via the bind mount.
+      LOCAL_OUTPUT_DIR: ${LOCAL_OUTPUT_DIR:-/workspace/output}
+      MAX_PAGES: ${MAX_PAGES:-99}
+      RESPECT_ROBOTS_TXT: ${RESPECT_ROBOTS_TXT:-true}
     depends_on:
       postgres:
         condition: service_healthy
