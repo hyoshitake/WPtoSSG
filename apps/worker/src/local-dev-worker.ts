@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import net from 'node:net';
+import { readPublicSite } from './publicSite.js';
 import { startQueueWorker } from './queueWorker.js';
 
 interface ServiceHealth {
@@ -101,7 +102,23 @@ setInterval(() => {
   void refreshHealth();
 }, 10_000).unref();
 
-const server = createServer((request, response) => {
+const server = createServer(async (request, response) => {
+  if (request.url?.startsWith('/public-sites/')) {
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    try {
+      const url = new URL(request.url, 'http://worker');
+      const parts = decodeURIComponent(url.pathname.slice('/public-sites/'.length)).split('/');
+      const domain = parts.shift() ?? '';
+      const artifact = await readPublicSite(domain, parts.join('/'), url.searchParams.get('archive') ?? undefined);
+      if (!artifact) { response.writeHead(404).end('not found'); return; }
+      response.setHeader('Content-Type', artifact.mime);
+      response.end(artifact.body);
+    } catch {
+      response.writeHead(502).end('artifact service unavailable');
+    }
+    return;
+  }
   if (!request.url?.startsWith('/healthz')) {
     response.statusCode = 404;
     response.end('not found');

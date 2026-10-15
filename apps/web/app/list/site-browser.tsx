@@ -13,7 +13,7 @@ function Artifact({ version }: { version: SiteVersion }) {
   if (version.artifactBackend === 'google-drive' && location.startsWith('https://drive.google.com/drive/folders/')) {
     return <a className="text-cyan-300 underline" href={location} target="_blank" rel="noreferrer">Drive で成果物を開く</a>;
   }
-  return <p>ローカル成果物: <code className="break-all">{location}</code><span className="block text-sm text-slate-400">Worker の保存先から取得してください。ブラウザからのダウンロードは利用できません。</span></p>;
+  return <p>ローカル成果物: <code className="break-all">{location}</code><span className="block text-sm text-slate-400">公開サイトのリンクから閲覧できます。</span></p>;
 }
 export function SiteBrowser({ siteKey }: { siteKey?: string }) {
   const [data, setData] = useState<SavedSite[] | SiteDetail>();
@@ -33,7 +33,7 @@ export function SiteBrowser({ siteKey }: { siteKey?: string }) {
     <table className="w-full text-left"><caption className="pb-4 text-left text-slate-400">最終保存日時の新しい順 · 保存に成功した最新版を表示</caption>
       <thead><tr className="border-b border-slate-700">{['サイト名 / 元URL', '最終保存日時', '処理結果 / 診断', '操作'].map(t => <th key={t} className="p-4">{t}</th>)}</tr></thead>
       <tbody>{data.map(site => <tr key={site.siteKey} className="border-b border-slate-800">
-        <td className="p-4"><Link className="text-cyan-300 underline" href={`/sites/${encodeURIComponent(site.siteKey)}`}>{site.name}</Link><p className="mt-1 break-all text-sm text-slate-400">{site.siteUrl}</p></td>
+        <td className="p-4"><Link className="text-cyan-300 underline" href={`/list/${encodeURIComponent(site.siteKey)}`}>{site.name}</Link><p className="mt-1 break-all text-sm text-slate-400">{site.siteUrl}</p></td>
         <td className="p-4 whitespace-nowrap">{date(site.latest.savedAt)}</td><td className="p-4"><Result version={site.latest} /></td>
         <td className="p-4"><Link className="text-cyan-300 underline" href={`/edit?siteKey=${encodeURIComponent(site.siteKey)}`}>編集（準備中）</Link></td>
       </tr>)}</tbody>
@@ -42,6 +42,7 @@ export function SiteBrowser({ siteKey }: { siteKey?: string }) {
   return <div className="space-y-8">
     <div><h2 className="text-2xl font-semibold">{data.name}</h2><p className="mt-2">元URL: <a className="text-cyan-300 underline" href={data.siteUrl} target="_blank" rel="noreferrer">{data.siteUrl}</a></p>
       <p className="my-2">最終保存: {date(data.latest.savedAt)} · <Result version={data.latest} /></p><Artifact version={data.latest} />
+      {['google-drive', 'local'].includes(data.latest.artifactBackend ?? '') && <p className="mt-2"><a className="text-cyan-300 underline" href={`/sites/${new URL(data.siteUrl).hostname}/`} target="_blank" rel="noreferrer">公開サイトを開く</a></p>}
       <Link className="mt-4 inline-block text-cyan-300 underline" href={`/edit?siteKey=${encodeURIComponent(data.siteKey)}`}>このサイトを編集（AI編集は準備中）</Link>
     </div>
     <h2 className="text-xl font-semibold">保存履歴</h2>
