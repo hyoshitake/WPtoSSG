@@ -264,3 +264,5 @@ docker compose up --build
 - `GOOGLE_SERVICE_ACCOUNT_KEY`
 - `GOOGLE_DRIVE_ROOT_FOLDER_ID`
 - `NEXT_PUBLIC_APP_URL`
+
+サイト一覧・履歴のDB初期設定と既存成果物の補完手順は [docs/site-history.md](docs/site-history.md) を参照してください。

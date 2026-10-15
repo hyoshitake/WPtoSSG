@@ -10,6 +10,7 @@
  * FINALIZE, which always produces a report (AGENTS.md §9).
  */
 
+import { recordSavedSite } from '@wptossg/shared/site-store';
 import type {
   ConvertSiteJobData,
   DiagnosticResult,
@@ -278,6 +279,7 @@ export async function runConvertSite(
       : undefined,
   };
 
+  let reportStored = false;
   // report.json goes into the `current` folder created during ROTATE_AND_UPLOAD.
   if (uploadResult) {
     const reportFile: UploadFile = {
@@ -292,6 +294,7 @@ export async function runConvertSite(
       if (result.failures.length > 0) {
         throw new Error(result.failures.map((failure) => failure.reason).join('; '));
       }
+      reportStored = true;
     } catch (error) {
       await publish(
         createJobEvent({
@@ -306,6 +309,13 @@ export async function runConvertSite(
   }
 
   job = { ...finalized.job, report };
+  if (uploadResult) {
+    try { await recordSavedSite({ ...job, graph: crawlResult?.graph }, siteKey, reportStored); }
+    catch {
+      await publish(createJobEvent({ jobId, stage: 'FINALIZE', type: 'warning',
+        message: 'Site history could not be saved to database; artifacts remain available in job report' }));
+    }
+  }
   await reporter.saveJob(job);
   for (const event of finalized.events) {
     const isTerminal = event.type === 'completed' || event.type === 'failed';
