@@ -10,6 +10,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./edit-store": {
+      "types": "./dist/edit-store.d.ts",
+      "default": "./dist/edit-store.js"
+    },
     "./site-store": {
       "types": "./dist/site-store.d.ts",
       "default": "./dist/site-store.js"

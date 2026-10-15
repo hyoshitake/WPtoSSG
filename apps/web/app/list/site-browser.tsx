@@ -35,7 +35,7 @@ export function SiteBrowser({ siteKey }: { siteKey?: string }) {
       <tbody>{data.map(site => <tr key={site.siteKey} className="border-b border-slate-800">
         <td className="p-4"><Link className="text-cyan-300 underline" href={`/list/${encodeURIComponent(site.siteKey)}`}>{site.name}</Link><p className="mt-1 break-all text-sm text-slate-400">{site.siteUrl}</p></td>
         <td className="p-4 whitespace-nowrap">{date(site.latest.savedAt)}</td><td className="p-4"><Result version={site.latest} /></td>
-        <td className="p-4"><Link className="text-cyan-300 underline" href={`/edit?siteKey=${encodeURIComponent(site.siteKey)}`}>編集（準備中）</Link></td>
+        <td className="p-4"><Link className="text-cyan-300 underline" href={`/edit?siteKey=${encodeURIComponent(site.siteKey)}`}>AIで編集</Link></td>
       </tr>)}</tbody>
     </table>
   );
@@ -43,7 +43,7 @@ export function SiteBrowser({ siteKey }: { siteKey?: string }) {
     <div><h2 className="text-2xl font-semibold">{data.name}</h2><p className="mt-2">元URL: <a className="text-cyan-300 underline" href={data.siteUrl} target="_blank" rel="noreferrer">{data.siteUrl}</a></p>
       <p className="my-2">最終保存: {date(data.latest.savedAt)} · <Result version={data.latest} /></p><Artifact version={data.latest} />
       {['google-drive', 'local'].includes(data.latest.artifactBackend ?? '') && <p className="mt-2"><a className="text-cyan-300 underline" href={`/sites/${new URL(data.siteUrl).hostname}/`} target="_blank" rel="noreferrer">公開サイトを開く</a></p>}
-      <Link className="mt-4 inline-block text-cyan-300 underline" href={`/edit?siteKey=${encodeURIComponent(data.siteKey)}`}>このサイトを編集（AI編集は準備中）</Link>
+      <Link className="mt-4 inline-block text-cyan-300 underline" href={`/edit?siteKey=${encodeURIComponent(data.siteKey)}`}>このサイトをAIで編集</Link>
     </div>
     <h2 className="text-xl font-semibold">保存履歴</h2>
     {data.versions.map(version => <article key={version.id} className="space-y-3 rounded-xl border border-slate-700 p-5">

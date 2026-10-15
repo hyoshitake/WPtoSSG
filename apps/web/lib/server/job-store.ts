@@ -8,6 +8,7 @@ import {
   jobEventsKey,
   jobStateKey,
   type ConvertSiteJobData,
+  type EditJobData,
   type Job,
   type JobEvent,
 } from '@wptossg/shared';
@@ -25,7 +26,7 @@ import { Redis } from 'ioredis';
 
 interface JobStoreState {
   redis: Redis;
-  queue: Queue<ConvertSiteJobData>;
+  queue: Queue<ConvertSiteJobData | EditJobData>;
 }
 
 const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
@@ -39,7 +40,7 @@ function getStore(): JobStoreState {
   if (!globalStore.__WPTOSSG_JOB_STORE__) {
     globalStore.__WPTOSSG_JOB_STORE__ = {
       redis: new Redis(redisUrl, { maxRetriesPerRequest: 3 }),
-      queue: new Queue<ConvertSiteJobData>(CONVERT_SITE_QUEUE, {
+      queue: new Queue<ConvertSiteJobData | EditJobData>(CONVERT_SITE_QUEUE, {
         connection: { url: redisUrl },
         defaultJobOptions: {
           // A retry would re-run the whole pipeline, including archive rotation;
@@ -120,6 +121,17 @@ export async function getJob(jobId: string): Promise<{ job: Job; events: JobEven
     return undefined;
   }
   return { job: JSON.parse(raw) as Job, events: await listEvents(jobId) };
+}
+
+export async function enqueueEdit(data: EditJobData): Promise<void> {
+  const { redis, queue } = getStore();
+  const now = new Date().toISOString();
+  const edit = await import('@wptossg/shared/edit-store').then(store => store.getEdit(data.jobId));
+  if (!edit) throw new Error('編集ジョブがありません。');
+  data.operationId=crypto.randomUUID();
+  const job: Job = {operationId:data.operationId,id:edit.id,siteUrl:edit.siteUrl,status:'pending',currentStage:data.action==='save'?'SAVE':'LOAD_BASE',createdAt:edit.createdAt,updatedAt:now,percent:0};
+  await redis.set(jobStateKey(job.id),JSON.stringify(job),'EX',JOB_STATE_TTL_SECONDS);
+  await queue.add('ai-edit',data,{jobId:`${data.jobId}-${data.action}-${crypto.randomUUID()}`});
 }
 
 /** Events after `lastEventId` (exclusive), or all events when omitted. */

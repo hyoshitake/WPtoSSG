@@ -5,6 +5,10 @@ export interface SiteVersion {
   siteKey: string;
   jobId: string;
   source: 'conversion' | 'ai-edit';
+  sourceJobId?: string;
+  baseVersionId?: string;
+  editJobId?: string;
+  draftId?: string;
   savedAt: string;
   report: JobReport;
   diagnostic?: DiagnosticResult;

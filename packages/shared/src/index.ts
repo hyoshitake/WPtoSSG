@@ -1,4 +1,5 @@
-export type JobStage =
+import { EDIT_STAGES, type EditStage } from './edits.js';
+export type JobStage = EditStage
   | 'PRECHECK'
   | 'CRAWL_GRAPH'
   | 'RENDER_AND_SNAPSHOT'
@@ -112,6 +113,7 @@ export interface JobProgress {
 }
 
 export interface Job {
+  operationId?: string;
   id: string;
   siteUrl: string;
   status: JobStatus;
@@ -177,7 +179,7 @@ export const DEFAULT_JOB_PROGRESS: JobProgress = {
 };
 
 export function isValidJobStage(stage: string): stage is JobStage {
-  return JOB_STAGES.includes(stage as JobStage);
+  return JOB_STAGES.includes(stage as JobStage) || EDIT_STAGES.includes(stage as EditStage);
 }
 
 export function getJobStageIndex(stage: JobStage): number {
@@ -581,3 +583,4 @@ export function pageUrlToRelativePath(url: string): string {
 }
 
 export * from './sites.js';
+export * from './edits.js';

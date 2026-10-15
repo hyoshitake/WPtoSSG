@@ -68,6 +68,9 @@ services:
       LOCAL_OUTPUT_DIR: ${LOCAL_OUTPUT_DIR:-/workspace/output}
       MAX_PAGES: ${MAX_PAGES:-99}
       RESPECT_ROBOTS_TXT: ${RESPECT_ROBOTS_TXT:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_EDIT_MODEL: ${OPENAI_EDIT_MODEL:-auto}
+      PREVIEW_PUBLIC_ORIGIN: ${PREVIEW_PUBLIC_ORIGIN:-http://localhost:4001}
     depends_on:
       postgres:
         condition: service_healthy

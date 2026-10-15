@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-const base = 'http://localhost:3000';
+const base = process.env.TEST_APP_URL ?? 'http://localhost:3000';
 try {
   for (let i = 0; i < 30; i++) {
     try { if ((await fetch(`${base}/list`)).ok) break; } catch {}
@@ -25,7 +25,7 @@ try {
   await page.unroute('**/api/sites');
   await page.route('**/api/sites', route => route.fulfill({ status: 503, json: { error: '取得失敗テスト' } }));
   await page.reload();
-  await page.getByRole('alert').waitFor();
+  await page.getByRole('alert').filter({hasText:'取得失敗テスト'}).waitFor();
   await page.getByRole('button', { name: '再試行' }).waitFor();
   const version = { id: 'v1', jobId: 'j1', siteKey: 'example-com', source: 'conversion', savedAt: '2026-01-01T00:00:00Z', report: { successCount: 2, failedCount: 1, warnings: 1 }, diagnostic: { riskLevel: 'medium', reasons: ['フォームを検出'], evidence: [{ type: 'selector', location: '#contact' }] } };
   await page.route('**/api/sites/example-com', route => route.fulfill({ json: { name: 'example.com', siteKey: 'example-com', siteUrl: 'https://example.com', latest: version, versions: [version] } }));
@@ -33,8 +33,11 @@ try {
   await page.getByText('フォームを検出', { exact: true }).waitFor();
   await page.getByText('selector: #contact', { exact: true }).waitFor();
   assert.equal(await page.getByText('成果物を利用できません', { exact: false }).count(), 2);
-  await page.getByRole('link', { name: 'このサイトを編集', exact: false }).click();
-  await page.getByText('対象サイト: example-com', { exact: false }).waitFor();
-  assert.equal(await page.getByRole('button', { name: '編集を開始（準備中）' }).isDisabled(), true);
+  await page.unroute('**/api/sites');
+  await page.route('**/api/sites', route => route.fulfill({ json: { sites: [{name:'example.com',siteKey:'example-com',siteUrl:'https://example.com',latest:version}] } }));
+  await page.getByRole('link', { name: 'このサイトをAIで編集', exact: true }).click();
+  await page.getByRole('option', {name:'example.com',exact:true}).waitFor({state:'attached'});
+  assert.equal(await page.getByLabel('編集するサイト').inputValue(),'example-com');
+  assert.equal(await page.getByRole('button', { name: '修正案を生成',exact:true }).isDisabled(), true);
   console.log('sites API and UI: passed');
 } finally { await browser.close(); }

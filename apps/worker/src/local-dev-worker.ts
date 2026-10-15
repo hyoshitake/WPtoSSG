@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import net from 'node:net';
 import { readPublicSite } from './publicSite.js';
 import { startQueueWorker } from './queueWorker.js';
+import { readEditPreview } from './editPreview.js';
 
 interface ServiceHealth {
   ok: boolean;
@@ -103,6 +104,21 @@ setInterval(() => {
 }, 10_000).unref();
 
 const server = createServer(async (request, response) => {
+  if (request.url?.startsWith('/edit-preview/')) {
+    response.setHeader('Cache-Control','no-store');
+    response.setHeader('Referrer-Policy','no-referrer');
+    response.setHeader('X-Content-Type-Options','nosniff');
+    response.setHeader('Access-Control-Allow-Origin','*');
+    response.setHeader('Content-Security-Policy',"sandbox allow-scripts; default-src 'self' https: data: blob:; script-src 'self' https: 'unsafe-inline'; style-src 'self' https: 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'");
+    try {
+      const url=new URL(request.url,'http://worker');
+      const [id,token,...parts]=decodeURIComponent(url.pathname.slice('/edit-preview/'.length)).split('/');
+      const artifact=id && token && await readEditPreview(id,token,parts.join('/'));
+      if(!artifact) { response.writeHead(404).end('not found'); return; }
+      response.setHeader('Content-Type',artifact.mime); response.end(artifact.body);
+    } catch { response.writeHead(503).end('preview unavailable'); }
+    return;
+  }
   if (request.url?.startsWith('/public-sites/')) {
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('X-Content-Type-Options', 'nosniff');
