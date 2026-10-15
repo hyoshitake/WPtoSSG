@@ -295,3 +295,13 @@ HTML は管理画面の Cookie やストレージにアクセスできない san
 既に保存済みの成果物も、サイト一覧に登録済みであれば再生成せず閲覧できます。
 Web にファイルを複製する必要はありません。Worker が保存先を読み出せる状態で起動してください。
 ローカル配信の検証: `npm run build:worker && node scripts/test-local-public-sites.mjs`。
+
+## AIによる生成サイト編集（Issue #19）
+
+`/edit`またはサイト一覧の「AIで編集」から指示を送り、変更概要・変更ファイル・隔離したプレビューを確認して保存できます。再指示と破棄にも対応します。保存前はcurrentを維持し、保存時に旧版をarchiveへ退避して一覧・履歴を更新します。変換と編集保存はサイト単位で排他し、古い版に基づく保存を拒否します。
+
+事前に`infra/supabase/002_ai_edits.sql`を適用し、Workerに`OPENAI_API_KEY`を設定してください。`OPENAI_EDIT_MODEL=auto`はアプリの既定モデル（現在は`gpt-6.1-sol`）を使用します。予算はOpenAI側で管理し、アプリに金額上限は設けません。小さいソースは直接送信し、大きい場合はAIが必要なファイルだけ取得します。
+
+プレビュー用の`PREVIEW_PUBLIC_ORIGIN`は、管理画面と異なるオリジンを指定します。ローカル既定値は`http://localhost:4001`です。設定・制限・復旧・既存データ補完の詳細は[AI編集の設計と運用](docs/ai-edit-design.md)を参照してください。
+
+検証: `node scripts/test-ai-edit.mjs`（検証DBとChromiumが必要。OpenAIは模擬応答）。画面の検証は起動済みWebに対し`TEST_APP_URL=http://localhost:3000 node scripts/test-ai-edit-ui.mjs`で実行します。

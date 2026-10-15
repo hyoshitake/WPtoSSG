@@ -23,6 +23,8 @@ export async function GET(
   }
 
   const lastEventId = request.headers.get('last-event-id') ?? new URL(request.url).searchParams.get('lastEventId');
+  const terminalForOperation = (event: JobEvent) => isTerminalEvent(event) &&
+    (!jobState.job.operationId || event.details?.operationId === jobState.job.operationId);
   const abort = new AbortController();
   request.signal.addEventListener('abort', () => abort.abort(), { once: true });
 
@@ -52,7 +54,7 @@ export async function GET(
         {
           onEvent: (event) => {
             send(serializeSseEvent(createJobEventEnvelope(event)));
-            if (isTerminalEvent(event)) {
+            if (terminalForOperation(event)) {
               close();
             }
           },
@@ -69,7 +71,7 @@ export async function GET(
 
       // A job that already finished before the client connected has its terminal
       // event in the replay; this only guards against a missing terminal event.
-      if (isTerminalJobStatus(jobState.job.status) && jobState.events.every((event) => !isTerminalEvent(event))) {
+      if (isTerminalJobStatus(jobState.job.status) && jobState.events.every((event) => !terminalForOperation(event))) {
         close();
       }
     },

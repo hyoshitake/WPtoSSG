@@ -11,6 +11,7 @@
  */
 
 import { recordSavedSite } from '@wptossg/shared/site-store';
+import { withSiteLock } from '@wptossg/shared/edit-store';
 import type {
   ConvertSiteJobData,
   DiagnosticResult,
@@ -44,7 +45,7 @@ export interface PipelineConfig {
   storageBackend: StorageBackend;
 }
 
-const STAGE_PROGRESS: Record<JobStage, number> = {
+const STAGE_PROGRESS: Partial<Record<JobStage, number>> = {
   PRECHECK: 5,
   CRAWL_GRAPH: 15,
   RENDER_AND_SNAPSHOT: 30,
@@ -145,6 +146,19 @@ export async function runConvertSite(
   reporter: JobReporter,
   config: PipelineConfig = loadPipelineConfig(),
 ): Promise<Job> {
+  try { return await withSiteLock(data.siteKey, () => runLockedConvertSite(data, reporter, config)); }
+  catch (error) {
+    const now = new Date().toISOString();
+    const reason = normalizeError(error);
+    const job: Job = {id:data.jobId,siteUrl:data.siteUrl,status:'failed',currentStage:'PRECHECK',createdAt:now,updatedAt:now,percent:0,
+      report:{id:data.jobId,jobId:data.jobId,generatedAt:now,successCount:0,failedCount:1,warnings:0,pages:[],stageBreakdown:[],failures:[{stage:'PRECHECK',target:data.siteUrl,reason}]}};
+    await reporter.saveJob(job);
+    await reporter.publish(createJobEvent({jobId:data.jobId,stage:'PRECHECK',type:'failed',message:reason}));
+    return job;
+  }
+}
+
+async function runLockedConvertSite(data: ConvertSiteJobData, reporter: JobReporter, config: PipelineConfig): Promise<Job> {
   const { jobId, siteUrl, siteKey } = data;
   const now = new Date().toISOString();
   let job: Job = {
@@ -176,7 +190,7 @@ export async function runConvertSite(
   };
 
   const enterStage = async (stage: JobStage): Promise<void> => {
-    job = { ...job, status: 'running', currentStage: stage, percent: STAGE_PROGRESS[stage], updatedAt: new Date().toISOString() };
+    job = { ...job, status: 'running', currentStage: stage, percent: STAGE_PROGRESS[stage] ?? 0, updatedAt: new Date().toISOString() };
     await reporter.saveJob(job);
     await publish(createJobEvent({ jobId, stage, type: 'job_state_changed', message: `${stage} stage started` }));
     log('info', 'stage started', { jobId, siteKey, stage });

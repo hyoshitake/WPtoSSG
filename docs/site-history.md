@@ -28,7 +28,7 @@ node scripts/backfill-sites.mjs /path/to/verified-jobs.json
 
 補完はSQLと同じDB接続権限で実行する。ファイルの移動やDriveの変更は行わない。
 ローカル成果物はWorker上のパスを表示する。ローカル・Driveともに `/sites/{元サイトのドメイン}/` で公開配信し、詳細画面に公開リンクを表示する。過去版は `?archive={archiveディレクトリ名}` を指定する。Driveのフォルダリンクも表示する。
-同一サイトの同時変換について、ストレージの既存ローテーションの排他仕様は本変更で拡張していない。
+同一サイトの変換・編集保存は共通のPostgreSQL advisory lockで直列化する。編集機能の導入には`002_ai_edits.sql`も適用する。[AI編集の設計と運用](ai-edit-design.md)を参照。
 
 検証スクリプト:
 

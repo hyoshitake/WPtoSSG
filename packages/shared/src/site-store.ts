@@ -4,7 +4,7 @@ import type { Job } from './index.js';
 import { savedVersion, type SavedSite, type SiteDetail, type SiteVersion } from './sites.js';
 
 const globalPool = globalThis as typeof globalThis & { __sitePool?: pg.Pool };
-function pool(): pg.Pool {
+export function pool(): pg.Pool {
   if (!process.env['DATABASE_URL']) throw new Error('DATABASE_URL is required');
   return globalPool.__sitePool ??= new pg.Pool({ connectionString: process.env['DATABASE_URL'], max: 4, connectionTimeoutMillis: 5000 });
 }
@@ -16,7 +16,7 @@ export async function recordSavedSite(job: Job, siteKey: string, reportStored = 
     await client.query('BEGIN');
     await client.query(`INSERT INTO saved_sites(site_key,name,site_url) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,
       [siteKey, new URL(job.siteUrl).hostname, job.siteUrl]);
-    // Serialize metadata updates for a site. Storage itself retains its existing locking policy.
+    // Serialize metadata updates; worker holds the shared site advisory lock during publication.
     const { rows } = await client.query('SELECT latest_version_id FROM saved_sites WHERE site_key=$1 FOR UPDATE', [siteKey]);
     const existing = await client.query('SELECT 1 FROM site_versions WHERE id=$1', [job.id]);
     if (!existing.rowCount) {

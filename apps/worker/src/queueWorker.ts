@@ -2,7 +2,8 @@
  * BullMQ consumer for the `convert-site` queue.
  */
 
-import type { ConvertSiteJobData, Job } from '@wptossg/shared';
+import type { ConvertSiteJobData, EditJobData, Job } from '@wptossg/shared';
+import { runEditJob } from './editPipeline.js';
 import { CONVERT_SITE_QUEUE } from '@wptossg/shared';
 import { Worker } from 'bullmq';
 import { Redis } from 'ioredis';
@@ -18,9 +19,9 @@ export function startQueueWorker(redisUrl: string): QueueWorkerHandle {
   const reporter = new RedisJobReporter(redis);
   const config = loadPipelineConfig();
 
-  const worker = new Worker<ConvertSiteJobData, Job>(
+  const worker = new Worker<ConvertSiteJobData | EditJobData, Job>(
     CONVERT_SITE_QUEUE,
-    async (queueJob) => runConvertSite(queueJob.data, reporter, config),
+    async (queueJob) => 'kind' in queueJob.data ? runEditJob(queueJob.data, reporter) : runConvertSite(queueJob.data, reporter, config),
     {
       connection: { url: redisUrl, maxRetriesPerRequest: null },
       // Playwright is memory-heavy, and concurrent runs for the same site
