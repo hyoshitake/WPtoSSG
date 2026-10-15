@@ -266,3 +266,32 @@ docker compose up --build
 - `NEXT_PUBLIC_APP_URL`
 
 サイト一覧・履歴のDB初期設定と既存成果物の補完手順は [docs/site-history.md](docs/site-history.md) を参照してください。
+
+### 成果物の公開配信
+
+Drive 保存時・ローカル保存時（`GOOGLE_DRIVE_ENABLED=false`）ともに `/sites/example.com/` からログイン不要で閲覧できます。
+子ページも `/sites/example.com/about/` で直接参照できます。
+旧版は `/sites/example.com/?archive=2026-10-15T00%3A00%3A00.000Z` のように
+Drive の `archive` 配下のディレクトリ名を指定します。存在しない世代は 404 です。
+
+Web に `WORKER_PUBLIC_URL`（例: `http://worker:4001`）を設定してください。
+この URL は Worker の HTTP サービスを指します。Docker Compose では設定済みです。
+Drive の認証環境変数は引き続き Worker のみに設定します。
+Web と Worker が別ドメインの場合も、閲覧者は Web の `/sites/` を使用します。
+配信レスポンスは `no-store` で、公開切替直後に新しい世代を読み出します。
+HTML は管理画面の Cookie やストレージにアクセスできない sandbox 内で動作します。
+
+アップロード先は `pending-{jobId}` です。アップロードと report 保存の完了後に
+旧 `current` を archive へ移し、一時フォルダを `current` に変更して公開先を切り替えます。
+公開先はサイトフォルダの Drive `appProperties.publishedFolderId` で管理し、
+ローテーション中も直前の公開フォルダを ID で読み出せます。
+失敗した一時フォルダは調査用に残り、公開配信の対象にはなりません。
+既存の成功済みサイトは公開ポインタがない場合 `current` から配信します。
+
+検証: `npm run build:worker && node scripts/test-public-sites.mjs`。
+
+ローカル保存時は Worker の `LOCAL_OUTPUT_DIR/sites/{siteKey}/current` から配信します。
+旧版は同じサイトの `archive` 配下のディレクトリ名を `?archive=` に指定します。
+既に保存済みの成果物も、サイト一覧に登録済みであれば再生成せず閲覧できます。
+Web にファイルを複製する必要はありません。Worker が保存先を読み出せる状態で起動してください。
+ローカル配信の検証: `npm run build:worker && node scripts/test-local-public-sites.mjs`。

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 
 const menus = [
   { href: '/', label: '変換器', path: 'M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4' },
-  { href: '/sites', label: '一覧', path: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01' },
+  { href: '/list', label: '一覧', path: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01' },
   { href: '/edit', label: '編集', path: 'm16 3 5 5M4 20l4-1L21 6a2.12 2.12 0 0 0-3-3L5 16l-1 4Z' },
 ];
 

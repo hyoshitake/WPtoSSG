@@ -7,8 +7,9 @@
  *   /sites/{siteKey}/archive/{ts}/ ← previous runs
  *
  * On the first run only `current` is created.
- * On subsequent runs the existing `current` folder is renamed/moved to
- * `archive/{iso-timestamp}` before a new `current` is populated.
+ * Files are uploaded into an unpublished pending folder first. After FINALIZE
+ * stores the report, publish() rotates current and atomically switches the
+ * site folder publishedFolderId property. Readers follow that property.
  *
  * The archive rotation is retried up to MAX_ROTATION_RETRIES times because
  * Drive rename operations can be transiently flaky.
@@ -78,6 +79,7 @@ export interface RotateAndUploadResult {
   /** Files that failed to upload (path + reason). */
   uploadFailures: Array<{ relativePath: string; reason: string }>;
   events: JobEvent[];
+  publish?: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -130,7 +132,7 @@ function bufferToStream(buffer: Buffer): Readable {
 /**
  * Find a folder with the given name inside `parentId`, or return undefined.
  */
-async function findFolder(
+export async function findFolder(
   drive: drive_v3.Drive,
   parentId: string,
   name: string,
@@ -316,7 +318,7 @@ async function uploadFiles(
 // Auth
 // ---------------------------------------------------------------------------
 
-function buildDriveClient(): drive_v3.Drive {
+export function buildDriveClient(): drive_v3.Drive {
   const rawKey = process.env['GOOGLE_SERVICE_ACCOUNT_KEY'];
   if (!rawKey) {
     throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY environment variable is not set');
@@ -413,10 +415,9 @@ async function rotateCurrentToArchive(
  *
  * 1. Resolve/create the Drive folder hierarchy:
  *    `{rootFolderId}/sites/{siteKey}/`
- * 2. If a `current` folder exists, archive it to
- *    `{rootFolderId}/sites/{siteKey}/archive/{archiveTimestamp}`.
- * 3. Create a fresh `current` folder.
- * 4. Upload all provided files into `current`, creating sub-folders as needed.
+ * 2. Upload into a pending folder without changing the published generation.
+ * 3. Return publish(), which FINALIZE calls only after successful report storage.
+ * 4. publish() archives old current, renames pending, then switches the pointer.
  *
  * Emits `JobEvent` records throughout for the event log / SSE stream.
  */
@@ -497,54 +498,34 @@ export async function rotateAndUpload(
     throw new Error(`Failed to resolve Drive folder hierarchy: ${reason}`);
   }
 
-  // --- Rotate existing current to archive ---
-  let archiveFolderId: string | undefined;
-  try {
-    archiveFolderId = await rotateCurrentToArchive(
-      drive,
-      siteFolderId,
-      archiveTimestamp,
-      maxRotationRetries,
-      retryDelayMs,
-    );
-
+  // Upload into an unpublished generation. The published folder ID remains stable
+  // while current is moved, so readers never observe the rotation gap.
+  const currentFolderId = await createFolder(drive, siteFolderId, `pending-${jobId}`);
+  let archiveFolderId = await findFolder(drive, siteFolderId, CURRENT_FOLDER_NAME);
+  const publish = async (): Promise<void> => {
+    // Pin legacy publications before moving current, eliminating the fallback gap.
     if (archiveFolderId) {
-      events.push(
-        createUploadEvent(jobId, 'stage_progress', 'Existing current folder archived', {
-          archiveFolderId,
-          archiveTimestamp,
-        }),
-      );
-    } else {
-      events.push(
-        createUploadEvent(jobId, 'stage_progress', 'No existing current folder found; skipping rotation'),
-      );
+      const site = await drive.files.get({ fileId: siteFolderId, fields: 'appProperties', supportsAllDrives: true });
+      if (!site.data.appProperties?.['publishedFolderId']) {
+        await drive.files.update({ fileId: siteFolderId,
+          requestBody: { appProperties: { publishedFolderId: archiveFolderId } }, supportsAllDrives: true });
+      }
     }
-  } catch (error) {
-    const reason = normalizeError(error);
-    events.push(
-      createUploadEvent(jobId, 'failed', 'Archive rotation failed', {
-        reason,
-        archiveTimestamp,
-      }),
-    );
-    throw new Error(`Archive rotation failed: ${reason}`);
-  }
-
-  // --- Create fresh current folder ---
-  let currentFolderId: string;
-  try {
-    currentFolderId = await createFolder(drive, siteFolderId, CURRENT_FOLDER_NAME);
-    events.push(
-      createUploadEvent(jobId, 'stage_progress', 'New current folder created', {
-        currentFolderId,
-      }),
-    );
-  } catch (error) {
-    const reason = normalizeError(error);
-    events.push(createUploadEvent(jobId, 'failed', 'Failed to create current folder', { reason }));
-    throw new Error(`Failed to create current folder: ${reason}`);
-  }
+    archiveFolderId = await rotateCurrentToArchive(drive, siteFolderId, archiveTimestamp,
+      maxRotationRetries, retryDelayMs);
+    try {
+      await drive.files.update({ fileId: currentFolderId, requestBody: { name: 'current' }, supportsAllDrives: true });
+      await drive.files.update({ fileId: siteFolderId,
+        requestBody: { appProperties: { publishedFolderId: currentFolderId } }, supportsAllDrives: true });
+    } catch (error) {
+      await drive.files.update({ fileId: currentFolderId, requestBody: { name: `pending-${jobId}` }, supportsAllDrives: true });
+      if (archiveFolderId) {
+        const archiveParent = await findFolder(drive, siteFolderId, 'archive');
+        if (archiveParent) await moveFolder(drive, archiveFolderId, archiveParent, siteFolderId, 'current');
+      }
+      throw error;
+    }
+  };
 
   // --- Upload files ---
   if (files.length === 0) {
@@ -584,7 +565,8 @@ export async function rotateAndUpload(
 
   return {
     currentFolderId,
-    archiveFolderId,
+    get archiveFolderId() { return archiveFolderId; },
+    publish: uploadFailures.length === 0 ? publish : undefined,
     uploadedCount,
     uploadFailures,
     events,

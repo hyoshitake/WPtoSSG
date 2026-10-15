@@ -123,6 +123,18 @@ function buildOutputFiles(
     );
   }
 
+  // Preserve original page URLs and map absolute asset references at serving time.
+  const publicRoutes: Record<string, string> = {};
+  for (const page of assetResult.pages) {
+    publicRoutes[page.snapshotPath.replace(/^\/+/, '')] = new URL(page.finalUrl || page.url).pathname;
+  }
+  for (const asset of assetResult.assets) {
+    if (!asset.isCdnMapped && asset.content) {
+      publicRoutes[new URL(asset.originalUrl).pathname.replace(/^\/+/, '')] = `/${asset.localPath}`;
+    }
+  }
+  add('public-routes.json', Buffer.from(JSON.stringify(publicRoutes)), 'application/json');
+
   add('graph.json', Buffer.from(`${JSON.stringify(crawlResult.graph, null, 2)}\n`, 'utf8'), 'application/json; charset=utf-8');
 
   return [...files.values()];
@@ -308,8 +320,27 @@ export async function runConvertSite(
     }
   }
 
+  let publicationSucceeded = config.storageBackend !== 'google-drive';
+  if (config.storageBackend === 'google-drive' && finalized.job.status === 'completed' &&
+      reportStored && uploadResult?.publish) {
+    try {
+      await uploadResult.publish();
+      publicationSucceeded = true;
+      if (report.storage) report.storage.archiveFolderId = uploadResult.archiveFolderId;
+      await publish(createJobEvent({ jobId, stage: 'FINALIZE', type: 'stage_progress',
+        message: 'Static site publication switched successfully' }));
+    } catch {
+      await publish(createJobEvent({ jobId, stage: 'FINALIZE', type: 'warning',
+        message: 'Static site publication failed; previous publication retained' }));
+    }
+  }
+
+  if (config.storageBackend === 'google-drive' && !publicationSucceeded) {
+    await publish(createJobEvent({ jobId, stage: 'FINALIZE', type: 'warning',
+      message: 'New artifacts were not published; previous publication retained' }));
+  }
   job = { ...finalized.job, report };
-  if (uploadResult) {
+  if (uploadResult && publicationSucceeded) {
     try { await recordSavedSite({ ...job, graph: crawlResult?.graph }, siteKey, reportStored); }
     catch {
       await publish(createJobEvent({ jobId, stage: 'FINALIZE', type: 'warning',

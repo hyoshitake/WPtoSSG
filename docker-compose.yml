@@ -34,6 +34,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://wptossg:wptossg@postgres:5432/wptossg}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      WORKER_PUBLIC_URL: http://worker:4001
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       GOOGLE_DRIVE_ENABLED: ${GOOGLE_DRIVE_ENABLED:-false}
     depends_on:
